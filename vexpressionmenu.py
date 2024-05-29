@@ -722,8 +722,38 @@ Ctrl-click to select using the primitive picker dialog.
 Shift-click to select using the primitive pattern editor.
 Alt-click to toggle movement of the display flag.
 """  } }
+    # Generally, the attribSelect presets follow the same parameter as the selection parameter in the "Attribute Adjust Float/Vector/Int" node 
     # Configures the appropriate menu settings and tags for a string parameter with an attribute selector and visualizing button
     presets['attribSelect'] = {'menu_script_language':'Python','menu_type':'StringReplace','item_generator_script':
+"""
+r = []
+node = hou.pwd()
+inputs = node.inputs()
+if inputs and inputs[0]:
+    geo = inputs[0].geometry()
+    if geo:
+        c = node.parm('class').evalAsString()
+        if c == 'detail':
+            attrs = geo.globalAttribs()
+        elif c == 'primitive':
+            attrs = geo.primAttribs()
+        elif c == 'point':
+            attrs = geo.pointAttribs()
+        else: # vertex
+            attrs = geo.vertexAttribs()
+        for a in attrs:
+            r.extend([a.name(), a.name()])
+return r
+""", 'tags': currentSettings.get('tags',{}) | {'script_action_help':'Toggle visualization Ctrl-LMB: Open the visualization editor',
+                                               'script_action_icon':'VIEW_visualization',
+                                               'script_action':
+"""
+import soputils  
+viz = soputils.getFalseColorVisualizerDefaults()
+soputils.actionToggleVisualizer(kwargs, viz_defaults=viz)
+"""} }
+    # Same as above, but filters only float attributes, using an appropriate default visualizer
+    presets['attribSelectFloat'] = {'menu_script_language':'Python','menu_type':'StringReplace','item_generator_script':
 """
 r = []
 node = hou.pwd()
@@ -750,6 +780,95 @@ return r
 """
 import soputils  
 viz = soputils.getFalseColorVisualizerDefaults()
+soputils.actionToggleVisualizer(kwargs, viz_defaults=viz)
+"""} }
+    # Same as above, but filters only vector (float[3]) attributes, using an appropriate default visualizer
+    presets['attribSelectVector'] = {'menu_script_language':'Python','menu_type':'StringReplace','item_generator_script':
+"""
+r = []
+node = hou.pwd()
+inputs = node.inputs()
+if inputs and inputs[0]:
+    geo = inputs[0].geometry()
+    if geo:
+        c = node.parm('class').evalAsString()
+        if c == 'detail':
+            attrs = geo.globalAttribs()
+        elif c == 'primitive':
+            attrs = geo.primAttribs()
+        elif c == 'point':
+            attrs = geo.pointAttribs()
+        else: # vertex
+            attrs = geo.vertexAttribs()
+        for a in attrs:
+            if a.dataType() == hou.attribData.Float and not a.isArrayType() and a.size() == 3:
+                r.extend([a.name(), a.name()])
+return r
+""", 'tags': currentSettings.get('tags',{}) | {'script_action_help':'Toggle visualization Ctrl-LMB: Open the visualization editor',
+                                               'script_action_icon':'VIEW_visualization',
+                                               'script_action':
+"""
+import soputils  
+soputils.actionToggleVisualizer(kwargs)
+"""} }
+    # Same as above, but filters only int attributes, using an appropriate default visualizer
+    presets['attribSelectInt'] = {'menu_script_language':'Python','menu_type':'StringReplace','item_generator_script':
+"""
+r = []
+node = hou.pwd()
+inputs = node.inputs()
+if inputs and inputs[0]:
+    geo = inputs[0].geometry()
+    if geo:
+        c = node.parm('class').evalAsString()
+        if c == 'detail':
+            attrs = geo.globalAttribs()
+        elif c == 'primitive':
+            attrs = geo.primAttribs()
+        elif c == 'point':
+            attrs = geo.pointAttribs()
+        else: # vertex
+            attrs = geo.vertexAttribs()
+        for a in attrs:
+            if a.dataType() == hou.attribData.Int and not a.isArrayType() and a.size() == 1:
+                r.extend([a.name(), a.name()])
+return r
+""", 'tags': currentSettings.get('tags',{}) | {'script_action_help':'Toggle visualization Ctrl-LMB: Open the visualization editor',
+                                               'script_action_icon':'VIEW_visualization',
+                                               'script_action':
+"""
+import soputils  
+viz = soputils.getRandomColorVisualizerDefaults()
+soputils.actionToggleVisualizer(kwargs, viz_defaults=viz)
+"""} }
+    # Same as above, but filters only string attributes, using an appropriate default visualizer
+    presets['attribSelectString'] = {'menu_script_language':'Python','menu_type':'StringReplace','item_generator_script':
+"""
+r = []
+node = hou.pwd()
+inputs = node.inputs()
+if inputs and inputs[0]:
+    geo = inputs[0].geometry()
+    if geo:
+        c = node.parm('class').evalAsString()
+        if c == 'detail':
+            attrs = geo.globalAttribs()
+        elif c == 'primitive':
+            attrs = geo.primAttribs()
+        elif c == 'point':
+            attrs = geo.pointAttribs()
+        else: # vertex
+            attrs = geo.vertexAttribs()
+        for a in attrs:
+            if a.dataType() == hou.attribData.String and not a.isArrayType() and a.size() == 1:
+                r.extend([a.name(), a.name()])
+return r
+""", 'tags': currentSettings.get('tags',{}) | {'script_action_help':'Toggle visualization Ctrl-LMB: Open the visualization editor',
+                                               'script_action_icon':'VIEW_visualization',
+                                               'script_action':
+"""
+import soputils  
+viz = soputils.getRandomColorVisualizerDefaults()
 soputils.actionToggleVisualizer(kwargs, viz_defaults=viz)
 """} }
     
@@ -1291,7 +1410,7 @@ def createSpareParmsFromOCLBindings(node, parmname):
                         tagdict = dict(adlParmSettings.get('tags',{}))
                         labelval = str(adlParmSettings.get('label',label))
                         sizeval = int(adlParmSettings.get('size',tuplesize))
-                        label_hidden = int(adlParmSettings.get('labelhidden',0))
+                        label_hidden = int(adlParmSettings.get('label_hidden',0))
                         helpval = str(adlParmSettings.get('help',None))
                         defaultExpressionLanguage = _initializeTupleValues({'deflang': getattr(hou.scriptLanguage, adlParmSettings.get('default_expression_language','Hscript')) }, 'deflang',hou.scriptLanguage.Hscript)
 
@@ -1512,7 +1631,7 @@ def createSpareParmsFromChCalls(node, parmname):
                 tagdict = dict(adlParmSettings.get('tags',{}))
                 labelval = str(adlParmSettings.get('label',label))
                 sizeval = int(adlParmSettings.get('size',size))
-                label_hidden = int(adlParmSettings.get('labelhidden',0))
+                label_hidden = int(adlParmSettings.get('label_hidden',0))
                 helpval = str(adlParmSettings.get('help',None))
                 defaultExpressionLanguage = _initializeTupleValues({'deflang': getattr(hou.scriptLanguage, adlParmSettings.get('default_expression_language','Hscript')) }, 'deflang',hou.scriptLanguage.Hscript)
 
