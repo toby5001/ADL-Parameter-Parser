@@ -6,7 +6,7 @@
 
 #define fallbackAttrib f@`chs('target_attribute')`
 #if `ch('class')`
-float value = getattrib(0,chs('class'),chs('target_attribute'),@elemnum,0); // adlParm[[default=density,preset=attribSelectFloat]] adlParm[[parm='class',hidden=1]]
+float value = getattrib(0,chs('class'),chs('target_attribute'),@elemnum,0); // adlParm[[default=mask,preset=attribSelectFloat]] adlParm[[parm='class',hidden=1]]
 #else
 float value = fallbackAttrib;
 #endif
