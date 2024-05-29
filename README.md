@@ -2,6 +2,8 @@
 
 This is a drop-in replacement for houdini's vexpressionmenu.py which adds support for simple (and complex!) in-line parameter specification (similar to OSL). The script is compatible with VEX and OpenCL by overriding the internal function used to populate a code snippet's parameters. Since this replaces a core function in houdini, a high priority of this project has been ensuring that the default behavior remains untouched.
 
+![](docs/media/demo-adl_mxPost.gif)
+
 The idea of this script is to allow for easily reusable code snippets, without the need for an entire HDA. In many scenarios, I find myself writing self-contained VEX scripts which aren't complex enough to justify an HDA, but would benefit from a more complex parameter interface. In addition, this allows for complex parameter interfaces to be specified anywhere that the "create spare parameters" button is present (since this is the function it replaces). 
 # Installation
 Method 1 **(recommended)** - User Prefs Folder:\
