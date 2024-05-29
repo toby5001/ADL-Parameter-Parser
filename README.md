@@ -26,7 +26,7 @@ v@P += chv('offset2'); // adlParm[[ default=(1,2,3) ]]
 v@P.y += chf('offset2'); // adlParm[[ default=1.5, min=-2, max=2, minlock=1 ]]
 ```
 ### Parameter targeting
-***NOTE: Parameters MUST be explicitly defined in OpenCL, as it uses a different way of specifying parameters.***
+###### :warning: ***Parameters MUST be explicitly defined in OpenCL, as it uses a different way of specifying parameters.***
 ```
 // This will result in standard sliders for x_offset and z_offset, with a custom default and maximum value for y_offset.
 v@P.x += chf('x_offset');

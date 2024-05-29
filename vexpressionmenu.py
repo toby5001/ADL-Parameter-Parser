@@ -1227,17 +1227,19 @@ def createSpareParmsFromOCLBindings(node, parmname):
     parm = node.parm(parmname)
     code = parm.evalAsString()
 
+    # Use unexpanded string for the following, so that behaviour is identical to VEX
+    code_unexpanded = parm.unexpandedString()
 
     # Extract parameter metadata dictionary
-    adlMetadata = _getAdlSettings(code,'adlMeta', '', 0)
+    adlMetadata = _getAdlSettings(code_unexpanded,'adlMeta', '', 0)
     if adlMetadata.get('disableall',0):
         # Bypass all setting gathering if disableall is true
         definedParmCollection = {}
         definedFolderCollection = {}
     else:
         # Extract a dictionary of any existing parameter settings
-        definedParmCollection = _getAdlSettings(code, 'adlParm', 'parm', 1)
-        definedFolderCollection = _getAdlSettings(code, 'adlFolder', 'name', 0)
+        definedParmCollection = _getAdlSettings(code_unexpanded, 'adlParm', 'parm', 1)
+        definedFolderCollection = _getAdlSettings(code_unexpanded, 'adlFolder', 'name', 0)
 
 
     # Extract bindings
@@ -1413,7 +1415,6 @@ def createSpareParmsFromOCLBindings(node, parmname):
                         label_hidden = int(adlParmSettings.get('label_hidden',0))
                         helpval = str(adlParmSettings.get('help',None))
                         defaultExpressionLanguage = _initializeTupleValues({'deflang': getattr(hou.scriptLanguage, adlParmSettings.get('default_expression_language','Hscript')) }, 'deflang',hou.scriptLanguage.Hscript)
-
 
                         disablewhen = adlParmSettings.get('disablewhen','')
                         hidewhen = adlParmSettings.get('hidewhen','')
