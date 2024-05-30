@@ -1413,7 +1413,7 @@ def createSpareParmsFromOCLBindings(node, parmname):
                         labelval = str(adlParmSettings.get('label',label))
                         sizeval = int(adlParmSettings.get('size',tuplesize))
                         label_hidden = int(adlParmSettings.get('label_hidden',0))
-                        helpval = str(adlParmSettings.get('help',None))
+                        helpval = str(adlParmSettings.get('help',''))
                         defaultExpressionLanguage = _initializeTupleValues({'deflang': getattr(hou.scriptLanguage, adlParmSettings.get('default_expression_language','Hscript')) }, 'deflang',hou.scriptLanguage.Hscript)
 
                         disablewhen = adlParmSettings.get('disablewhen','')
@@ -1633,7 +1633,7 @@ def createSpareParmsFromChCalls(node, parmname):
                 labelval = str(adlParmSettings.get('label',label))
                 sizeval = int(adlParmSettings.get('size',size))
                 label_hidden = int(adlParmSettings.get('label_hidden',0))
-                helpval = str(adlParmSettings.get('help',None))
+                helpval = str(adlParmSettings.get('help',''))
                 defaultExpressionLanguage = _initializeTupleValues({'deflang': getattr(hou.scriptLanguage, adlParmSettings.get('default_expression_language','Hscript')) }, 'deflang',hou.scriptLanguage.Hscript)
 
                 disablewhen = adlParmSettings.get('disablewhen','')
