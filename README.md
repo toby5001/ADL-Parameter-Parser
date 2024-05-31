@@ -12,7 +12,7 @@ Method 2 - Overwriting the original in directlty in Houdini's core files:\
 ``$HFS\Houdini\pythonX.Xlibs`` (for example ``C:\Program Files\Side Effects Software\Houdini 20.0.688\houdini\python3.10libs``)
 
 # Compatibility
-This script is a modification of Houdini 20.0's vexpressionmenu.py script, so it is tested and confirmed working with Houdini 20.0.688. It has also been tested with Houdini 19.5.805, which has the added benifit of backporting the newer style of putting parameters above the snippets. It has been tested in Python 3.9 and 3.10 and is likely compatible with other versions.
+This script is a modification of Houdini 20.0's vexpressionmenu.py script, so it is tested and confirmed working with Houdini 20.0.688. It has also been tested with Houdini 19.5.805, which has the added benefit of backporting the newer style of putting parameters above the snippets. It has been tested in Python 3.9 and 3.10 and is likely compatible with other versions.
 
 # Examples
 The best way to understand the formating of the parser is to see it in use: [Full Examples](./examples)\
