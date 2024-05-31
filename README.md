@@ -5,6 +5,10 @@ This is a drop-in replacement for houdini's vexpressionmenu.py which adds suppor
 ![](docs/media/demo-adl_mxPost.gif)
 
 The idea of this script is to allow for easily reusable code snippets, without the need for an entire HDA. In many scenarios, I find myself writing self-contained VEX scripts which aren't complex enough to justify an HDA, but would benefit from a more complex parameter interface. In addition, this allows for complex parameter interfaces to be specified anywhere that the "create spare parameters" button is present (since this is the function it replaces). 
+# Full Snippet Examples
+The best way to understand the formating of the parser is to see it in use.\
+A few useful snippepts are included in this repo: [Full Examples](./examples)\
+In addition, small snipets demonstrating individual parts of the parser are below.
 # Installation
 Method 1 **(recommended)** - User Prefs Folder:\
  ``$USER_PREFS/pythonX.Xlibs`` (for example ``C:\Users\Andrew\Documents\houdini20.0\python3.10libs\vexpressionmenu.py``)\
@@ -14,10 +18,8 @@ Method 2 - Overwriting the original in directlty in Houdini's core files:\
 # Compatibility
 This script is a modification of Houdini 20.0's vexpressionmenu.py script, so it is tested and confirmed working with Houdini 20.0.688. It has also been tested with Houdini 19.5.805, which has the added benefit of backporting the newer style of putting parameters above the snippets. It has been tested in Python 3.9 and 3.10 and is likely compatible with other versions.
 
-# Examples
-The best way to understand the formating of the parser is to see it in use: [Full Examples](./examples)\
-\
 In addition, the following are a series of VEX snippets which demonstrate different aspect of the parser's functionality. I'd recommend pasting them into a wrangle and seeing what happens. OpenCL is also supported, and the parser's syntax is identical.
+# Individual Examples
 ### Common arguments
 In it's simplest form, the parser can be used to set default, min, and max values.
 ```
