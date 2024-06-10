@@ -1,18 +1,18 @@
 # ADL Parameter Parser
 
-This is a drop-in replacement for houdini's vexpressionmenu.py which adds support for simple (and complex!) in-line parameter specification (similar to OSL). The script is compatible with VEX and OpenCL by overriding the internal function used to populate a code snippet's parameters. Since this replaces a core function in houdini, a high priority of this project has been ensuring that the default behavior remains untouched.
+This is a drop-in replacement for Houdini's vexpressionmenu.py which adds support for simple (and complex!) in-line parameter specification (similar to OSL). The script is compatible with VEX and OpenCL by overriding the internal function used to populate a code snippet's parameters. Since this replaces a core function in Houdini, a high priority of this project has been ensuring that the default behavior remains untouched.
 
 ![](docs/media/demo-adl_mxPost.gif)
 
 The idea of this script is to allow for easily reusable code snippets, without the need for an entire HDA. In many scenarios, I find myself writing self-contained VEX scripts which aren't complex enough to justify an HDA, but would benefit from a more complex parameter interface. In addition, this allows for complex parameter interfaces to be specified anywhere that the "create spare parameters" button is present (since this is the function it replaces). 
 # Full Snippet Examples
-The best way to understand the formating of the parser is to see it in use.\
-A few useful snippepts are included in this repo: [Full Examples](./examples)\
-In addition, small snipets demonstrating individual parts of the parser are below.
+The best way to understand the formatting of the parser is to see it in use.\
+A few useful snippets are included in this repo: [Full Examples](./examples)\
+In addition, small snippets demonstrating individual parts of the parser are below.
 # Installation
 Method 1 **(recommended)** - User Prefs Folder:\
  ``$USER_PREFS/pythonX.Xlibs`` (for example ``C:\Users\Andrew\Documents\houdini20.0\python3.10libs\vexpressionmenu.py``)\
-Method 2 - Overwriting the original in directlty in Houdini's core files:\
+Method 2 - Overwriting the original in directly in Houdini's core files:\
 ``$HFS\Houdini\pythonX.Xlibs`` (for example ``C:\Program Files\Side Effects Software\Houdini 20.0.688\houdini\python3.10libs``)
 
 # Compatibility
@@ -37,7 +37,7 @@ v@P.z += chf('z_offset');
 // If a parm is not specified in an adlParm, it will look for the nearest parameter reference before it in the code.
 ```
 ```
-// Alternativley, you can directly declare a target parameter for an adlParm
+// Alternatively, you can directly declare a target parameter for an adlParm
 v@P.x += chf('x_offset');
 v@P.y += chf('y_offset');
 v@P.z += chf('z_offset');
@@ -62,7 +62,7 @@ string wood_type = chs('wood_type'); // adlParm[[ default=oak, menu_pairs={'elm'
 int branch_type = chi('branch_type'); // adlParm[[ default=1, menu_items=('Elm Tree','Oak Tree')]]
 ```
 ### Presets
-For a few common usecases, there are presets which can be specified that populate the approprate tags and arguments for complex parameters.
+For a few common usecases, there are presets which can be specified that populate the appropriate tags and arguments for complex parameters.
 - attribSelect
     ```
     // attribSelect creates the appropriate tags and menu configurations needed to have an attribute selector and visualizer.
@@ -99,14 +99,14 @@ vector offset = chv('offset'); // adlParm[[ folder=offseting ]]
 float mask = chf('offset_amount'); // adlParm[[ folder=offseting ]]
 ```
 ```
-// Optionally, it is possible to specify folder configurations with adlParm, whose configuration will be used insead of the default.
+// Optionally, it is possible to specify folder configurations with adlParm, whose configuration will be used instead of the default.
 int enable_offset = chi('enable_offset'); // adlParm[[type=toggle,default=1]]
 // adlFolder[[name=offsetting, type=collapsible, disablewhen='{ enable_offset != 1 }' ]]
 vector offset = chv('offset'); // adlParm[[ folder=offsetting ]]
 float mask = chf('offset_amount'); // adlParm[[ folder=offsetting, minlock=1, maxlock=1 ]]
 v@P += offset*mask;
 ```
-By default, folders are only construced if they appear in a specific parameter, but they can be set to be created independent of (and before) the parameters. Independent folders will be placed in the order they are found, NOT the order they are used in adlParms. Try disabling the independent argument to see the different behavior.
+By default, folders are only constructed if they appear in a specific parameter, but they can be set to be created independent of (and before) the parameters. Independent folders will be placed in the order they are found, NOT the order they are used in adlParms. Try disabling the independent argument to see the different behavior.
 ```
 // adlFolder[[name=containing_folder, independent=1, type=radio ]]
 // It is also possible to specify parent folders, though be cautious about the order they are called.
@@ -149,7 +149,7 @@ chf('button_one');
 kwargs={'script_callback':"print('Click!')",'tags':{'script_callback_language':'python'} } ]] */
 ```
 ### Metadata
-There are also a few settings which you might want to define for your entire script, including the ability to disable the enhanced parser alltogether (disableall). This is useful for seeing how the parameters will be created if you don't have the script installed. By default, the parser will not modify parameters that already exist, but this can be changed with the replaceall setting. NOTE: Replace does not effect folders, as updating their position and dependencies is a headache I didn't feel was necessary.
+There are also a few settings which you might want to define for your entire script, including the ability to disable the enhanced parser altogether (disableall). This is useful for seeing how the parameters will be created if you don't have the script installed. By default, the parser will not modify parameters that already exist, but this can be changed with the replaceall setting. NOTE: Replace does not effect folders, as updating their position and dependencies is a headache I didn't feel was necessary.
 ```
 // Try changing the disableall setting to see the difference!
 // adlMeta[[ disableall=1, replaceall=1 ]]
@@ -158,7 +158,7 @@ chf('slider'); // adlParm[[min=-3.2,max=5,default=2]]
 # List of possible adlParm Arguments
 Many of these arguments directly correspond to parts of the ParmTemplates, but some have had their behavior slightly adjusted for ease of use. As said above, through the Template, Arg, Kwarg, and Tags arguments, essentially all aspects of parameter templates are supported.
 - **parm** : String. The parameter that is being customized. If not present in VEX, this can be automatically set.
-- **default** : Float/Int/String or Tuple, Sets the default value, can be a single value or optionaly a tuple for multi-component parms. Corresponds to default_value.
+- **default** : Float/Int/String or Tuple, Sets the default value, can be a single value or optionally a tuple for multi-component parms. Corresponds to default_value.
 - **min** : Float/Int. Sets the minimum value. Same name as python arg.
 - **max** : Float/Int. Sets the minimum value. Same name as python arg.
 - **minlock** : Boolean. Limits to the min value. Corresponds to min_is_strict.
@@ -178,7 +178,7 @@ Many of these arguments directly correspond to parts of the ParmTemplates, but s
 - **menu_items** : String Tuple. A list of menu items for a string or int parameter. Same name as python arg.
 - **menu_labels** : String Tuple. Optional tuple of menu labels to change the option shown in the interface. Same name as python arg.
 - **menu_pairs** : String Dictionary. As an alternative to menu_items and menu_labels, a single menu_pairs dict can be specified with item:label pairs.
-- **icon_names** : String Tuple. Optional tple of icons corresponding to menu items. Same name as python arg.
+- **icon_names** : String Tuple. Optional tuple of icons corresponding to menu items. Same name as python arg.
 - **item_generator_script** : String. Either a Hscript or Python expression to generate menu items. Same name as python arg.
 - **item_generator_script_language** : String. Sets the language for item_generator_script. Defaults to Python. Possible values are within the hou.scriptLanguage module.
 - **menu_type** : String. Defaults to Normal. Possible values are within the hou.menuType module.
@@ -191,7 +191,7 @@ Many of these arguments directly correspond to parts of the ParmTemplates, but s
 # List of possible adlFolder Arguments
 - **name** : String. The name of the folder. This is what name will be looked for by an adlParm's folder setting. All folders are placed within the snippet's default folder.
 - **parent_folder** : String. The containing folder of the current folder. Be careful about the order in which the folders are created.
-- **independent** : Boolean. Folders are normally constructed the first time that they occur in an active parameter. By default, if an adlFolder is not directly referencedm it wil never be created. If independent, they will instead be placed before any of the parameters are created. This is useful for top-level folders.
+- **independent** : Boolean. Folders are normally constructed the first time that they occur in an active parameter. By default, if an adlFolder is not directly referenced it wil never be created. If independent, they will instead be placed before any of the parameters are created. This is useful for top-level folders.
 - **label** : String. Overrides the automatic label given to a folder. Same name as python arg.
 - **hidden** : Boolean. Hides the entire folder. Corresponds to is_hidden.
 - **folder_type** : String. Sets the folder type for the folder. Defaults to Simple. Possible values are within the hou.folderType module.
