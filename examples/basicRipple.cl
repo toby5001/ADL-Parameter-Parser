@@ -8,9 +8,9 @@
 #bind parm phase float
 #bind point &P float3
 
-// adlParm[[parm=height,min=-4,max=4,default=1]]
-// adlParm[[parm=width,min=0,max=8,default=.5]]
-// adlParm[[parm=phase,min=-10,max=10]]
+// [[parm=height,min=-4,max=4,default=1]]
+// [[parm=width,min=0,max=8,default=.5]]
+// [[parm=phase,min=-10,max=10]]
 
 @KERNEL
 {
