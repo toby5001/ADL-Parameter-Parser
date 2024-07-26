@@ -198,6 +198,24 @@ scaleincomingvel = scaleincomingvel;""",
     'Pass Through',
 ]
 
+_initialsnippets['popcurveincompressibleflow/localresist'] = [
+"""airresist = airresist;
+spinresist = spinresist;""",
+    'Pass Through',
+]
+
+_initialsnippets['popcurveincompressibleflow/localvel'] = [
+"""velscale = velscale;
+velfallscale = velfallscale;""",
+    'Pass Through',
+]
+
+_initialsnippets['popcurveincompressibleflow/localavel'] = [
+"""avelscale = avelscale;
+avelfallscale = avelfallscale;""",
+    'Pass Through',
+]
+
 _initialsnippets['popdrag/localdragexpression'] = [
 """airresist = airresist;
 windvelocity = windvelocity;""",
@@ -991,7 +1009,6 @@ def _adlAddSpareParmsToStandardFolder(node, parmname, refs, definedParmCollectio
             # Since borderless isn't actualy a folder type, merge the needed tags with any existing ones
             if adlFolderSettings.get('type','') == 'borderless' or adlFolderSettings.get('type','') == 'Borderless': tags = tags | {'sidefx::look':'blank'}
 
-
             conditionals = adlFolderSettings.get('conditionals',{})
             # since disablewhen and hidewhen are fairly common usecases, it is possible to directly specify them instead of using the conditionals dict (which still takes priority)
             disablewhen = adlFolderSettings.get('disablewhen','')
@@ -1022,7 +1039,6 @@ def _adlAddSpareParmsToStandardFolder(node, parmname, refs, definedParmCollectio
                 independent_folder_templates[currentname] = template
             else:
                 folder_templates[currentname] = template
-
 
     # We consider a multiparm any parameter with a number in it.
     # This might have false positives, but it is important to not try
@@ -1156,12 +1172,173 @@ def _initializeMenuKwargs(adlParmSettings):
     menu_kwargs['icon_names'] = adlParmSettings.get('icon_names',())
     return menu_kwargs
 
-# This function ensures that kwargs which expect a tuple are given a tuple, even if the input it only a single value
+# This function ensures that kwargs which expect a tuple are given a tuple, even if the input is only a single value
 def _initializeTupleValues(targetDict, targetKey, fallback):
     tupleVals = targetDict.get(targetKey,fallback)
     if( isinstance(tupleVals, tuple) != 1):
         tupleVals = tuple([tupleVals],)
     return tupleVals
+
+# This adds support for inline hscript ch calls for use in OpenCL, (this is most useful for compiler overrides, though generally as a last resort)
+def _hscriptRefsFromChCalls(node, code, definedParmCollection, adlMetadata):
+    # Remove comments
+    code = comment_or_string_exp.sub(remove_comments, code)
+
+    # Loop over the channel refs found in the VEX, work out the corresponding
+    # template type, remember for later (we might need to check first if the
+    # user wants to replace existing parms).
+    refs = []
+    existing = []
+    foundnames = set()
+    for match in chcall_exp.finditer(code):
+        call = match.group(1)
+        name = match.group(2)[1:-1]
+
+        # If the same parm shows up more than once, only track the first
+        # case.  This avoids us double-adding since we delay actual
+        # creation of parms until we've run over everything.
+        if name in foundnames:
+            continue
+        foundnames.add(name)
+        
+        size = ch_size.get(call, 1)
+        label = name.title().replace("_", " ")
+
+        if name not in definedParmCollection:
+            if call == "chs":
+                template = hou.StringParmTemplate(name, label, size)
+            elif call == "chf":
+                template = hou.FloatParmTemplate(name, label, size, min=0, max=1)
+            else:
+                template = hou.IntParmTemplate(name, label, size)
+
+        else:
+            # If a corresponding setting collection is found, make use of the parameter configuration system
+            adlParmSettings = definedParmCollection[name]
+
+            if 'template' in adlParmSettings:
+                # If enabled, this uses the template string to decide which class is used, with args and kwargs being taken directly from the dictionary (if they exist)
+                template = _templateFromDirect(adlParmSettings, name, label, size)
+
+            else:
+
+                # Common parameter settings are explicitly defined here, with more particular ones being set later
+                hidden = int(adlParmSettings.get('hidden',0))
+                hjoin = int(adlParmSettings.get('hjoin',0))
+                minlock = int(adlParmSettings.get('minlock',0))
+                maxlock = int(adlParmSettings.get('maxlock',0))
+                tagdict = dict(adlParmSettings.get('tags',{}))
+                labelval = str(adlParmSettings.get('label',label))
+                sizeval = int(adlParmSettings.get('size',size))
+                label_hidden = int(adlParmSettings.get('label_hidden',0))
+                helpval = str(adlParmSettings.get('help',''))
+                defaultExpressionLanguage = _initializeTupleValues({'deflang': getattr(hou.scriptLanguage, adlParmSettings.get('default_expression_language','Hscript')) }, 'deflang',hou.scriptLanguage.Hscript)
+
+                disablewhen = adlParmSettings.get('disablewhen','')
+                hidewhen = adlParmSettings.get('hidewhen','')
+                
+                direct_kwargs = adlParmSettings.get('kwargs',{})
+                type = adlParmSettings.get('type','')
+
+                if type.capitalize() == 'Toggle':
+                    defval = adlParmSettings.get('default',0)
+                    defaultExpression = adlParmSettings.get('default_expression','')
+                    kwargs = {'default_value':defval, 'default_expression':defaultExpression, 'is_hidden':hidden, 'join_with_next':hjoin, 
+                                'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 'default_expression_language':defaultExpressionLanguage[0] }
+                    kwargs = kwargs | direct_kwargs
+                    template = hou.ToggleParmTemplate(name, labelval, **kwargs )
+
+                else:
+                    # If not using manual template definition and there is not an appropriate type, use the existing template categorization
+                    if call == "chs":
+                        menu_kwargs = _initializeMenuKwargs(adlParmSettings)
+                        defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
+                        defFallback=''
+                        # String menus prefer the default value to be one of the item names, not an empty value
+                        if menu_kwargs['menu_items']: defFallback = menu_kwargs['menu_items'][0]
+                        defvals = _initializeTupleValues(adlParmSettings,'default',defFallback)
+                        kwargs = { 'default_value':defvals, 'default_expression':defaultExpression, 'is_hidden':hidden, 'join_with_next':hjoin, 'disable_when':disablewhen, 
+                                    'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 'default_expression_language':defaultExpressionLanguage}
+                        # Merge menu arguments and any direct kwargs
+                        kwargs = kwargs | menu_kwargs
+                        kwargs = kwargs | direct_kwargs
+                        template = hou.StringParmTemplate(name, labelval, sizeval, **kwargs )
+                    elif call == "chf":
+                        defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
+                        defvals = _initializeTupleValues(adlParmSettings,'default',0)
+                        floatMin = float(adlParmSettings.get('min',0))
+                        floatMax = float(adlParmSettings.get('max',1))
+                        kwargs = {'min':floatMin, 'max':floatMax, 'default_value':defvals, 'default_expression':defaultExpression, 'is_hidden':hidden, 'join_with_next':hjoin,
+                                    'min_is_strict':minlock, 'max_is_strict':maxlock, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 
+                                    'default_expression_language':defaultExpressionLanguage}
+                        kwargs = kwargs | direct_kwargs
+                        template = hou.FloatParmTemplate(name, labelval, sizeval, **kwargs )
+                    else:
+                        menu_kwargs = _initializeMenuKwargs(adlParmSettings)
+                        defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
+                        defvals = _initializeTupleValues(adlParmSettings,'default',0)
+                        intMin = int(adlParmSettings.get('min',0))
+                        intMax = int(adlParmSettings.get('max',10))
+                        kwargs = {'default_value':defvals, 'default_expression':defaultExpression, 'min':intMin, 'max':intMax, 'is_hidden':hidden, 'join_with_next':hjoin, 
+                                    'min_is_strict':minlock, 'max_is_strict':maxlock, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 
+                                    'default_expression_language':defaultExpressionLanguage}
+                        # Merge menu arguments and any direct kwargs
+                        kwargs = kwargs | menu_kwargs
+                        kwargs = kwargs | direct_kwargs
+                        template = hou.IntParmTemplate(name, labelval, sizeval, **kwargs )
+                    
+            # Apply any hidewhen conditions, since they can't be set directly in the ParmTemplate arguments
+            if 'hidewhen' in adlParmSettings:
+                template.setConditional(hou.parmCondType.HideWhen, hidewhen)  
+
+
+        exparm = node.parm(name) or node.parmTuple(name)
+        if exparm:
+            if not exparm.isSpare():
+                # The existing parameter isn't a spare, so just skip it
+                continue
+            if adlMetadata.get('replaceall',0) or definedParmCollection.get(name,{}).get('replace',0):
+                # Parameter replacing has been enabled for either the current parameter, or the entire snippet
+                refs.append((name, template))
+            else:
+                extemplate = exparm.parmTemplate()
+                etype = extemplate.type()
+                ttype = template.type()
+                if (
+                    etype != ttype or
+                    extemplate.numComponents() != template.numComponents() or
+                    (ttype == hou.parmTemplateType.String and
+                    extemplate.stringType() != template.stringType())
+                ):
+                    # The template type is different, remember the name and template
+                    # type to replace later
+                    existing.append((name, template))
+                else:
+                    # No difference in template type, we can skip this
+                    continue
+        else:
+            # Remember the parameter name and template type to insert later
+            refs.append((name, template))
+
+    # If there are existing parms with the same names but different template
+    # types, ask the user if they want to replace them
+    if existing:
+        exnames = ", ".join(f'"{name}"' for name, _ in existing)
+        if len(existing) > 1:
+            msg = f"Parameters {exnames} already exist, replace them?"
+        else:
+            msg = f"Parameter {exnames} already exists, replace it?"
+        result = hou.ui.displayCustomConfirmation(
+            msg, ("Replace", "Skip Existing", "Cancel"), close_choice=2,
+            title="Replace Existing Parameters?",
+            suppress=hou.confirmType.DeleteSpareParameters,
+        )
+        if result == 0:  # Replace
+            refs.extend(existing)
+        elif result == 2:  # Cancel
+            return
+    
+    return refs
     
 
 
@@ -1238,9 +1415,8 @@ def createSpareParmsFromOCLBindings(node, parmname):
         definedFolderCollection = {}
     else:
         # Extract a dictionary of any existing parameter settings
-        definedParmCollection = _getAdlSettings(code_unexpanded, 'adlParm', 'parm', 1)
+        definedParmCollection = _getAdlSettings(code_unexpanded, '\ ', 'parm', 0) | _getAdlSettings(code_unexpanded, 'adlParm', 'parm', 0)
         definedFolderCollection = _getAdlSettings(code_unexpanded, 'adlFolder', 'name', 0)
-
 
     # Extract bindings
     bindings = hou.text.oclExtractBindings(code)
@@ -1248,6 +1424,13 @@ def createSpareParmsFromOCLBindings(node, parmname):
     channellinks = []
     ramplinks = []
     refs = []
+
+    iscop = False
+    # To allow for this script to be backwards-compatible with Houdini versions < 20.5, only check for Cops in certain cases
+    houversion = hou.applicationVersion()
+    if houversion[0]+(houversion[1]/10) >= 20.5:
+        if node.type().category() == hou.copNodeTypeCategory():
+            iscop = True
 
     # Sadly, SOP and DOP opencl have completely different
     # binding names.  Use the base bindings type to differntiate
@@ -1264,8 +1447,9 @@ def createSpareParmsFromOCLBindings(node, parmname):
             'layertype' : '_layertype',
             'layerborder' : '_layerborder',
             'volume' : '_volume',
-            'geometry' : None,
+            'geometry' : '_geometry',
             'input' : '_input',
+            'portname' : '_portname',
             'vdbtype' : '_vdbtype',
             'forcealign' : '_forcealign',
             'resolution' : '_resolution',
@@ -1284,6 +1468,7 @@ def createSpareParmsFromOCLBindings(node, parmname):
             'timescale' : '_timescale',
             'intval' : '_intval',
             'fval'   : '_fval',
+            'v2val'  : '_v2val',
             'v3val'  : '_v3val',
             'v4val'  : '_v4val',
             }
@@ -1299,6 +1484,7 @@ def createSpareParmsFromOCLBindings(node, parmname):
             'volume' : 'Volume',
             'geometry' : 'Geometry',
             'input' : None,
+            'portname' : None,
             'vdbtype' : None,
             'forcealign' : None,
             'resolution' : 'Resolution',
@@ -1317,6 +1503,7 @@ def createSpareParmsFromOCLBindings(node, parmname):
             'timescale' : 'TimeScale',
             'intval' : 'Int',
             'fval'   : 'Flt',
+            'v2val'  : 'Flt2',
             'v3val'  : 'Flt3',
             'v4val'  : 'Flt4',
         }
@@ -1324,9 +1511,18 @@ def createSpareParmsFromOCLBindings(node, parmname):
         # Unknown
         pass
 
+    inputs = node.parm('inputs')
+    outputs = node.parm('outputs')
+
+    # Add any inline hscript refs
+    refs = refs + _hscriptRefsFromChCalls(node, code_unexpanded, definedParmCollection, adlMetadata)
+
     # Loop over each binding to see if it exists on explicit bindings,
     # if not add it.
     for binding in bindings:
+        isgeo = binding['type'] in ('attribute', 'volume', 'vdb')
+        islayer = binding['type'] == 'layer'
+
         # Search our node's bindings...
         numbind = node.parm(bindparm).evalAsInt()
         found = False
@@ -1340,53 +1536,65 @@ def createSpareParmsFromOCLBindings(node, parmname):
             tuplesize = 1
             isint = False
             isramp = False
-            islayer = False
 
             # Add to our list if we should have spare parms...
-            if binding['type'] in ('int', 'float', 'float3', 'float4'):
+            if binding['type'] in ('int', 'float', 'float2', 'float3', 'float4'):
                 requiresparm = True
                 if binding['type'] == 'int':
                     isint = True
+                if binding['type'] == 'float2':
+                    tuplesize = 2
+                    # Only cops supports v2
+                    if not iscop:
+                        requiresparm = False
                 if binding['type'] == 'float3':
                     tuplesize = 3
                 if binding['type'] == 'float4':
                     tuplesize = 4
-            if binding['type'] in ('attribute', 'volume', 'vdb'):
-                # If it is optional and has a defval we want to
-                # trigger it
-                requiresparm = binding['optional'] and binding['defval']
 
-            # Some cases we don't support...
-            if binding['type'] == 'attribute' and (binding['attribtype'] == 'floatarray' or binding['attribtype'] == 'intarray'):
-               requiresparm = False
+            # If it is optional and has a defval we want to
+            # trigger it
+            if isgeo and binding['readable'] and binding['optional'] and binding['defval']:
+                requiresparm = True
+                # Some cases we don't support...
+                if binding['type'] == 'attribute':
+                    if binding['attribtype'] == 'floatarray' or binding['attribtype'] == 'intarray':
+                        requiresparm = False
+                    elif binding['attribtype'] == 'int':
+                        isint = True
+                        if binding['attribsize'] != 1:
+                            requiresparm = False
+                    elif binding['attribtype'] == 'float':
+                        tuplesize = binding['attribsize']
+                        if tuplesize not in (1, 3, 4):
+                            requiresparm = False
 
-            if binding['type'] == 'attribute' and binding['attribtype'] == 'int':
-                isint = True
-                if binding['attribsize'] != 1:
-                    requiresparm = False
-            
-            if binding['type'] == 'attribute' and binding['attribtype'] == 'float':
-                tuplesize = binding['attribsize']
-                if tuplesize not in (1, 3, 4):
-                    requiresparm = False
+            # extraparm does not work for layer, and may not be wanted
+            # if islayer and binding['readable'] and binding['optional'] and binding['defval']:
+            #    requiresparm = True
+
             if binding['type'] == 'ramp':
                 isramp = True
                 requiresparm = True
                 ramptype = hou.rampParmType.Color
                 if binding['ramptype'] == 'float':
                     ramptype = hou.rampParmType.Float
-            if binding['type'] == 'layer':
-                islayer = True
-                requiresparm = True
 
             name = binding['name']
             label = name.title().replace("_", " ")
-            # We want to avoid conflict with existing OpenCL parms.
-            # we have no need to exactly match as the source isn't a
-            # ch("") like it is in VEX.
-            internalname = name + '_val'
-
             if requiresparm:
+                # We want to avoid conflict with existing OpenCL parms.
+                # we have no need to exactly match as the source isn't a
+                # ch("") like it is in VEX.
+                internalname = name + '_val'
+
+                # In cops we have prefixed internal parms so we don't
+                # have to worry about conflicts so much, but we want to
+                # fall back to _val if that already existed.
+                exparm = node.parm(internalname) or node.parmTuple(internalname)
+                if not exparm and iscop:
+                    internalname = name
+
                 if name not in definedParmCollection:
                     if isramp:
                         template = hou.RampParmTemplate(internalname, label, ramptype)
@@ -1433,7 +1641,7 @@ def createSpareParmsFromOCLBindings(node, parmname):
                         else:
                             # If not using manual template definition and there is not an appropriate type, use the existing template categorization
                             if isramp:
-                                kwargs = {'is_hidden':hidden, 'join_with_next':hjoin, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval}
+                                kwargs = {'is_hidden':hidden, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval}
                                 kwargs = kwargs | direct_kwargs
                                 template = hou.RampParmTemplate(internalname, labelval, ramptype, **kwargs )
                             elif isint:
@@ -1464,14 +1672,13 @@ def createSpareParmsFromOCLBindings(node, parmname):
                     if 'hidewhen' in adlParmSettings:
                         template.setConditional(hou.parmCondType.HideWhen, hidewhen)  
 
-                if not islayer:
-                    # Check if we have an existing parm.
-                    # note the user may have removed an explicit binding,
-                    # but left the existing parm, in this case we'll link
-                    # to that...
-                    exparm = node.parm(internalname) or node.parmTuple(internalname)
-                    if not exparm:
-                        refs.append((internalname, template))
+                # Check if we have an existing parm.
+                # note the user may have removed an explicit binding,
+                # but left the existing parm, in this case we'll link
+                # to that...
+                exparm = node.parm(internalname) or node.parmTuple(internalname)
+                if not exparm:
+                    refs.append((internalname, template))
 
                 # Create our new binding...
                 node.parm(bindparm).set(numbind+1)
@@ -1487,17 +1694,67 @@ def createSpareParmsFromOCLBindings(node, parmname):
                     parm = node.parm(keyparmname) or node.parmTuple(keyparmname)
                     if parm: parm.set(binding[key])
                 if isramp:
-                    ramplinks.append(( internalname, bindparmprefix + str(numbind) + bindparmsuffix['ramp']))
+                    s = '_ramp_rgb' if ramptype == hou.rampParmType.Color else bindparmsuffix['ramp']
+                    ramplinks.append(( internalname, bindparmprefix + str(numbind) + s))
                 else:
                     if isint:
                         t = 'intval'
-                    elif tuplesize == 3:
-                        t = 'v%dval' % tuplesize
-                    elif tuplesize == 4:
-                        t = 'v%dval' % tuplesize
-                    else:
+                    elif tuplesize == 1:
                         t = 'fval'
+                    else:
+                        t = 'v%dval' % tuplesize
                     channellinks.append(( internalname,  bindparmprefix + str(numbind) + bindparmsuffix[t], binding[t]))
+
+        if inputs is not None and (binding['readable'] or (not binding['readable'] and not binding['writeable'])) and (isgeo or islayer):
+            num = inputs.evalAsInt()
+            found = False
+            lookupname = binding['portname']
+            if lookupname == '':
+                lookupname = binding['name']
+            for i in range(1, num+1):
+                name = node.parm('input' + str(i) + '_name').evalAsString()
+                if name == lookupname:
+                    found = True
+                    break
+            if not found:
+                inputs.set(num+1)
+                i = num+1
+                node.parm('input' + str(i) + '_name').set(lookupname)
+                if isgeo:
+                    layertype = 'geo'
+                else:
+                    if not binding['readable'] and not binding['writeable']:
+                        layertype = 'metadata'
+                    else:
+                        layertype = binding['layertype']
+                if layertype == 'float?': layertype = 'floatn'
+                node.parm('input' + str(i) + '_type').set(layertype)
+                node.parm('input' + str(i) + '_optional').set(binding['optional'])
+
+        if outputs is not None and binding['writeable'] and (isgeo or islayer):
+            num = outputs.evalAsInt()
+            found = False
+            lookupname = binding['portname']
+            if lookupname == '':
+                lookupname = binding['name']
+            for i in range(1, num+1):
+                name = node.parm('output' + str(i) + '_name').evalAsString()
+                if name == lookupname:
+                    found = True
+                    break
+            if not found:
+                outputs.set(num+1)
+                i = num+1
+                node.parm('output' + str(i) + '_name').set(lookupname)
+                layertype = 'geo' if isgeo else binding['layertype']
+                if layertype == 'float?': layertype = 'floatn'
+                node.parm('output' + str(i) + '_type').set(layertype)
+
+    # add an unbound input to provide output layer size
+    if inputs is not None and outputs is not None and not inputs.evalAsInt() and outputs.evalAsInt():
+        inputs.set(1)
+        node.parm('input1_name').set('')
+        node.parm('input1_optional').set(True)
 
     # Completed the binding loop, we've extended our bindings to have
     # all the new explicit bindings that we think need parms and build
@@ -1529,8 +1786,14 @@ def createSpareParmsFromOCLBindings(node, parmname):
         npt = 2 # parm.evalAsInt()
         for i in range(npt):
             node.parm(srcname + str(i+1) + 'pos').set(node.parm(internalname + str(i+1) + 'pos'))
-            node.parm(srcname + str(i+1) + 'value').set(node.parm(internalname + str(i+1) + 'value'))
             node.parm(srcname + str(i+1) + 'interp').set(node.parm(internalname + str(i+1) + 'interp'))
+            x = node.parm(internalname + str(i+1) + 'value')
+            if x:
+                node.parm(srcname + str(i+1) + 'value').set(x)
+            else:
+                node.parm(srcname + str(i+1) + 'cr').set(node.parm(internalname + str(i+1) + 'cr'))
+                node.parm(srcname + str(i+1) + 'cg').set(node.parm(internalname + str(i+1) + 'cg'))
+                node.parm(srcname + str(i+1) + 'cb').set(node.parm(internalname + str(i+1) + 'cb'))
 
     # no need to dirty an opencl node as we affected cooking parmeters
     # when we updated bindings.
@@ -1565,7 +1828,7 @@ def createSpareParmsFromChCalls(node, parmname):
         definedFolderCollection = {}
     else:
         # Extract a dictionary of any existing parameter settings
-        definedParmCollection = _getAdlSettings(code, 'adlParm', 'parm', 1)
+        definedParmCollection = _getAdlSettings(code, '\ ', 'parm', 1) | _getAdlSettings(code, 'adlParm', 'parm', 1)
         definedFolderCollection = _getAdlSettings(code, 'adlFolder', 'name', 0)
 
 
@@ -1773,3 +2036,5 @@ def createSpareParmsFromChCalls(node, parmname):
             # (This is really a workaround for a bug (#123616), since Houdini
             # should ideally know to update VEX snippets automatically).
             parm.set(original)
+
+
