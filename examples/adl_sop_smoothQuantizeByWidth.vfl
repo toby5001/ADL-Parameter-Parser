@@ -5,13 +5,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #define fallbackAttrib f@`chs('target_attribute')` // [[default=mask,preset=attribSelectFloat]]
-#if `ch('class')` // [[parm='class',hidden=1]]
+#if `ch('class')` // [[hidden=1]]
 float value = getattrib(0,chs('class'),chs('target_attribute'),@elemnum,0); 
 #else
 float value = fallbackAttrib;
 #endif
 
-float stepnum = chf('step_count'); // [[ parm=step_count, min=1, max=10, default=5, replace=1]]
+float stepnum = chf('step_count'); // [[ parm=step_count, min=1, max=10, default=5 ]]
 
 float valfloor = floor( value*stepnum ) / stepnum;
 
