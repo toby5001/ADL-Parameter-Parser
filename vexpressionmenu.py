@@ -657,7 +657,7 @@ chcall_exp = re.compile(f"""
 ({"|".join(re.escape(chcall) for chcall in chcalls)})  # Match any call string
 \\s*[(]\\s*  # Opening bracket, ignore any surrounding whitespace
 ('\\w+'|"\\w+")  # Single or double quoted string
-[),]  # Closing bracket or comma marking end of first argument
+\\s*[),]  # Optional white space and closing bracket or comma marking end of first argument
 """, re.VERBOSE)
 # Number of components corresponding to different ch calls. If a call string is
 # not in this dict, it's assumed to have a single component.
@@ -1777,7 +1777,7 @@ def createSpareParmsFromOCLBindings(node, parmname):
         # Link the point count
         if srcparm: srcparm.setExpression("ch('" + internalname + "')")
         # Setup opmultiparms
-        cmd = 'opmultiparm ' + node.path() + ' "' + srcname + '#pos" "' + internalname + '#pos" "' + srcname + '#value" "' + internalname + '#value" "' + srcname + '#interp" "' + internalname + '#interp"'
+        cmd = 'opmultiparm ' + node.path() + ' "' + srcname + '#pos" "' + internalname + '#pos" "' + srcname + '#value" "' + internalname + '#value" "' + srcname + '#interp" "' + internalname + '#interp" "' + srcname + '#cr" "' + internalname + '#cr" "' + srcname + '#cg" "' + internalname + '#cg" "' + srcname + '#cb" "' + internalname + '#cb"'
         (res, err) = hou.hscript(cmd)
 
         # Manually link already exisiting parms
@@ -2036,5 +2036,6 @@ def createSpareParmsFromChCalls(node, parmname):
             # (This is really a workaround for a bug (#123616), since Houdini
             # should ideally know to update VEX snippets automatically).
             parm.set(original)
+
 
 
