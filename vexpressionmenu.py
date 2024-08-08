@@ -5,6 +5,11 @@ import snippetmenu
 import re
 import ast
 
+# Change these to change the prefix that the script looks for at the begining of a paramter specification (eg: folder[[name=folder_one,type=collapsible]] )
+_adlMetaPrefix = 'meta'
+_adlParmPrefix = 'parm'
+_adlFolderPrefix = 'folder'
+
 _hasloadedsnippets = False
 
 _initialsnippets = {}
@@ -1408,15 +1413,15 @@ def createSpareParmsFromOCLBindings(node, parmname):
     code_unexpanded = parm.unexpandedString()
 
     # Extract parameter metadata dictionary
-    adlMetadata = _getAdlSettings(code_unexpanded,'adlMeta', '', 0)
+    adlMetadata = _getAdlSettings(code_unexpanded,_adlMetaPrefix, '', 0)
     if adlMetadata.get('disableall',0):
         # Bypass all setting gathering if disableall is true
         definedParmCollection = {}
         definedFolderCollection = {}
     else:
         # Extract a dictionary of any existing parameter settings
-        definedParmCollection = _getAdlSettings(code_unexpanded, '\ ', 'parm', 0) | _getAdlSettings(code_unexpanded, 'adlParm', 'parm', 0)
-        definedFolderCollection = _getAdlSettings(code_unexpanded, 'adlFolder', 'name', 0)
+        definedParmCollection = _getAdlSettings(code_unexpanded, '\ ', 'parm', 0) | _getAdlSettings(code_unexpanded, _adlParmPrefix, 'parm', 0)
+        definedFolderCollection = _getAdlSettings(code_unexpanded, _adlFolderPrefix, 'name', 0)
 
     # Extract bindings
     bindings = hou.text.oclExtractBindings(code)
@@ -1821,15 +1826,15 @@ def createSpareParmsFromChCalls(node, parmname):
 
 
     # Extract parameter metadata dictionary
-    adlMetadata = _getAdlSettings(code,'adlMeta', '', 0)
+    adlMetadata = _getAdlSettings(code,_adlMetaPrefix, '', 0)
     if adlMetadata.get('disableall',0):
         # Bypass all setting gathering if disableall is true
         definedParmCollection = {}
         definedFolderCollection = {}
     else:
         # Extract a dictionary of any existing parameter settings
-        definedParmCollection = _getAdlSettings(code, '\ ', 'parm', 1) | _getAdlSettings(code, 'adlParm', 'parm', 1)
-        definedFolderCollection = _getAdlSettings(code, 'adlFolder', 'name', 0)
+        definedParmCollection = _getAdlSettings(code, '\ ', 'parm', 1) | _getAdlSettings(code, _adlParmPrefix, 'parm', 1)
+        definedFolderCollection = _getAdlSettings(code, _adlFolderPrefix, 'name', 0)
 
 
     # Remove comments
