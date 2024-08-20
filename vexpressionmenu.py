@@ -926,9 +926,12 @@ def _getAdlSettings(code, settingname, itemTitle, enablelocating):
                     if '=' in sub: 
                         subsplit = sub.split('=', 1)
                         subKey = subsplit[0].strip()
-                        # Try to evaluate the value directly using python literals, falling back to a standard write if it fails
+                        # Try to evaluate the value directly, falling back to a standard write if it fails
                         try:
-                            subVal = ast.literal_eval( subsplit[1].strip() )
+                            # Currently using full evaluation. This technically creates a security hole, but if you're executing it inside Houdini
+                            #  there were already a fair amount of security conceits with code execution.
+                            # subVal = ast.literal_eval( subsplit[1].strip() )
+                            subVal = eval( subsplit[1].strip() )
                         except ValueError:
                             subVal = subsplit[1].strip()
                         newdict[subKey] = subVal
