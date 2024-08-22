@@ -932,7 +932,7 @@ def _getAdlSettings(code, settingname, itemTitle, enablelocating):
                             #  there were already a fair amount of security conceits with code execution.
                             # subVal = ast.literal_eval( subsplit[1].strip() )
                             subVal = eval( subsplit[1].strip() )
-                        except ValueError:
+                        except (ValueError, NameError):
                             subVal = subsplit[1].strip()
                         newdict[subKey] = subVal
             # Write the current settings to the larger dict
