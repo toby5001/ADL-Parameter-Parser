@@ -1012,7 +1012,7 @@ def _adlAddSpareParmsToStandardFolder(node, parmname, refs, definedParmCollectio
             folderfallback = folderaliases.get( adlFolderSettings.get('type','simple'), 'Simple' )
             folderType = getattr(hou.folderType, adlFolderSettings.get('folder_type', folderfallback) )
             hidden = adlFolderSettings.get('is_hidden',adlFolderSettings.get('hidden',False))
-            endstabgroup = adlFolderSettings.get('ends_tab_group',adlFolderSettings.get('endtabgroup',False))
+            endstabgroup = adlFolderSettings.get('ends_tab_group',adlFolderSettings.get('endstabgroup',False))
             tags = adlFolderSettings.get('tags',{})
             # Since borderless isn't actualy a folder type, merge the needed tags with any existing ones
             if adlFolderSettings.get('type','') == 'borderless' or adlFolderSettings.get('type','') == 'Borderless': tags = tags | {'sidefx::look':'blank'}
