@@ -6,7 +6,7 @@ This is a drop-in replacement for Houdini's vexpressionmenu.py which adds suppor
 
 The idea of this script is to fufill a similar purpose to OSL, where you might have a piece of code that you use often, but that doesn't need a complex asset surrounding it. This allows for a complete interface to be specified within your code, which can be transported through a simple copy and paste. While the initial intent of this script was just to have an easy way to set a min and max value (and a toggle isntead of an integer slider), it supports *all* aspects of a parameter template, meaning that you can build truly complex interfaces.
 
-# Full Snippet Examples
+# [Full Snippet Examples](https://github.com/toby5001/Houdini-Snippets)
 The fastest way to see what you can do with the parser is to see it in use. A majority of my own larger snippets have been created with this parser in mind, and use a large amount of the functionality: [Houdini Snippets Repo](https://github.com/toby5001/Houdini-Snippets)
 
 # Individual Argument Examples
