@@ -1587,8 +1587,8 @@ def createSpareParmsFromOCLBindings(node, parmname):
 
     # Extract parameter metadata dictionary
     adlMetadata = _getAdlSettings(code_unexpanded,_adlMetaPrefix, '', 0)
-    if adlMetadata.get('disableall',0):
-        # Bypass all setting gathering if disableall is true
+    if adlMetadata.get('disable_all',0):
+        # Bypass all setting gathering if disable_all is true
         definedParmCollection = {}
         definedFolderCollection = {}
     else:
@@ -1961,8 +1961,8 @@ def createSpareParmsFromChCalls(node, parmname):
 
     # Extract parameter metadata dictionary
     adlMetadata = _getAdlSettings(code,_adlMetaPrefix, '', 0)
-    if adlMetadata.get('disableall',0):
-        # Bypass all setting gathering if disableall is true
+    if adlMetadata.get('disable_all',0):
+        # Bypass all setting gathering if disable_all is true
         definedParmCollection = {}
         definedFolderCollection = {}
     else:
