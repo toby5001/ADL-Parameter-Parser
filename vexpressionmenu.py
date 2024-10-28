@@ -897,6 +897,9 @@ soputils.actionToggleVisualizer(kwargs, viz_defaults=viz)
     
     return presets.get(presetName,{})
 
+
+_setting_aliases = {'minlock':'min_is_strict','maxlock':'max_is_strict','default_value':'default'}
+
 # This creates a dictionary of parameters with any existing parameter settings found in the input code
 def _getAdlSettings(code, settingname, itemTitle, enablelocating):
     adlSettingCall_exp = re.compile(f"(?s)(?<="+settingname+"\[\[).*?(?=\]\])", re.VERBOSE)
@@ -911,30 +914,29 @@ def _getAdlSettings(code, settingname, itemTitle, enablelocating):
         # SEP_MATCHER = re.compile(r"\|\|(?=(?:[^\"']*[\"'][^\"']*[\"'])*[^\"']*$)")
         # for currentset in SEP_MATCHER.split(currentmatch):
         for currentset in srchsplit('||',currentmatch):
-            currentsetStripped = currentset.strip()
-            # Interpet both the simple '=' separated format, or the more direct evaluation method
-            if currentsetStripped.startswith('{') and currentsetStripped.endswith('}'):
-                # Assume that the current section is a python-style dictionary
-                # Evaluate the entire inside of the current adlParm[[ ]] section as python. This will execute anything contained within.
-                newdict = eval(currentset)
-            else:
-                # Grab key-value pairs that are separated by a comma sign, which are in turn separated by an equal sign
-                newdict = {}
-                # COMMA_MATCHER = re.compile(r",(?=(?:[^\"']*[\"'][^\"']*[\"'])*[^\"']*$)")
-                # for sub in COMMA_MATCHER.split(currentset):
-                for sub in srchsplit(',',currentset):
-                    if '=' in sub: 
-                        subsplit = sub.split('=', 1)
-                        subKey = subsplit[0].strip()
-                        # Try to evaluate the value directly, falling back to a standard write if it fails
-                        try:
-                            # Currently using full evaluation. This technically creates a security hole, but if you're executing it inside Houdini
-                            #  there were already a fair amount of security conceits with code execution.
-                            # subVal = ast.literal_eval( subsplit[1].strip() )
-                            subVal = eval( subsplit[1].strip() )
-                        except (ValueError, NameError):
-                            subVal = subsplit[1].strip()
-                        newdict[subKey] = subVal
+            # Grab key-value pairs that are separated by a comma sign, which are in turn separated by an equal sign
+            newdict = {}
+            # COMMA_MATCHER = re.compile(r",(?=(?:[^\"']*[\"'][^\"']*[\"'])*[^\"']*$)")
+            # for sub in COMMA_MATCHER.split(currentset):
+            for sub in srchsplit(',',currentset):
+                if '=' in sub: 
+                    subsplit = sub.split('=', 1)
+                    subKey = subsplit[0].strip()
+                    # Try to evaluate the value directly, falling back to a standard write if it fails
+                    try:
+                        subVal = ast.literal_eval( subsplit[1].strip() )
+                        # subVal = eval( subsplit[1].strip() )
+                    except (ValueError, NameError):
+                        subVal = subsplit[1].strip()
+                else:
+                    # If there isn't an equals sign, assume that this is a boolean value intended to be enabled.
+                    subKey = sub.strip()
+                    subVal = True
+
+                if subKey in _setting_aliases:
+                    # Check if the current key name has an alias available and swap it out
+                    subKey = _setting_aliases[subKey]
+                newdict[subKey] = subVal
             # Write the current settings to the larger dict
             definedSettings = definedSettings | newdict
 
@@ -970,22 +972,289 @@ def _getAdlSettings(code, settingname, itemTitle, enablelocating):
 
     return definedParmCollection
 
-def _templateFromDirect(inputParmDict, name, label, size):
-    templateClass = getattr(hou, inputParmDict['template'] )
-    if 'args' in inputParmDict:
-        # Assume that all argument handling is being done directly in the parameter settings
-        direct_args = inputParmDict['args']
-        direct_kwargs = inputParmDict.get('kwargs',{})
-        template = templateClass( *direct_args, **direct_kwargs)
-    else:
-        # Fallback to constructing the basic args if they are not present. Not recommended.
-        print('Using automatic argument construction for '+name+'. Explicit arguments recommended through setting args=(foo,bar)')
-        labelval = str(inputParmDict.get('label',label))
-        sizeval = int(inputParmDict.get('size',size))
-        # This WILL cause an error if the input template doesn't use a size argument
-        direct_kwargs = inputParmDict.get('kwargs',{})
-        template = templateClass( name, labelval, sizeval, **direct_kwargs )
-    return template
+class adlTemplateMaker:
+    def __init__(self, parmSettings, name, label, size):
+        self.parmSettings = parmSettings
+        self.name = name
+        self.label = str(self.parmSettings.get('label',label))
+        self.size = int(self.parmSettings.get('size',size))
+
+    def _initializeTupleValues(self, targetDict, targetKey, fallback):
+        """Checks if a target dictionary value is a tuple, and if not converts it to one."""
+        tupleVals = targetDict.get(targetKey,fallback)
+        if( isinstance(tupleVals, tuple) != 1):
+            tupleVals = tuple([tupleVals],)
+        return tupleVals
+    
+    def __dictSplitter(self, dict):
+        dictSets = {}
+        if dict:
+            keySet = []
+            valSet = []
+            for key in dict:
+                keySet.append(key)
+                valSet.append(dict[key])
+
+            dictSets['keys']=tuple(keySet)
+            dictSets['vals']=tuple(valSet)
+        else:
+            dictSets['keys']=()
+            dictSets['vals']=()
+        return dictSets
+
+    def __getMenuKwargs(self):
+        menu_kwargs = {}
+        if 'menu_pairs' in self.parmSettings:
+            splitDict = self.__dictSplitter(self.parmSettings['menu_pairs'])
+            menu_kwargs['menu_items'] = splitDict.get('keys',())
+            menu_kwargs['menu_labels'] = splitDict.get('vals',())
+        elif 'menu_items' in self.parmSettings:
+            menu_kwargs['menu_items'] = self.parmSettings['menu_items']
+            menu_kwargs['menu_labels'] = self.parmSettings.get('menu_labels',())
+        else:
+            menu_kwargs['menu_items'] = ()
+            menu_kwargs['menu_labels'] = ()
+        if 'item_generator_script' in self.parmSettings:
+            menu_kwargs['item_generator_script'] = self.parmSettings['item_generator_script']                 
+            menu_kwargs['item_generator_script_language'] = getattr(hou.scriptLanguage, self.parmSettings.get('item_generator_script_language','Python') )
+        else:
+            menu_kwargs['item_generator_script'] = ''
+            menu_kwargs['item_generator_script_language'] = None
+        menu_kwargs['menu_type'] = getattr(hou.menuType, self.parmSettings.get('menu_type','Normal'))
+        menu_kwargs['icon_names'] = self.parmSettings.get('icon_names',())
+        self.menu_kwargs =  menu_kwargs
+
+    def getCommonSettings(self):
+        # Common parameter settings are explicitly defined here, with more particular ones being set later
+        self.is_hidden = int(self.parmSettings.get('is_hidden',0))
+        self.join_with_next = int(self.parmSettings.get('join_with_next',0))
+        self.tags = dict(self.parmSettings.get('tags',{}))
+        self.is_label_hidden = int(self.parmSettings.get('is_label_hidden',0))
+        self.help = str(self.parmSettings.get('help',''))
+        self.default_expression_language = self._initializeTupleValues({'deflang': getattr( hou.scriptLanguage, self.parmSettings.get('default_expression_language','Hscript')) }, 'deflang',hou.scriptLanguage.Hscript)
+        self.script_callback = self.parmSettings.get('script_callback',None)
+        self.script_callback_language = getattr( hou.scriptLanguage, self.parmSettings.get('script_callback_language', 'Hscript'))
+
+        self.disable_when = self.parmSettings.get('disable_when','')
+        self.hide_when = self.parmSettings.get('hide_when','')
+        
+        self.direct_kwargs = self.parmSettings.get('kwargs',{})
+
+    def __getDefaults(self, fallback):
+        self.default_expression = self._initializeTupleValues(self.parmSettings, 'default_expression', '')
+        self.default_value = self._initializeTupleValues(self.parmSettings, 'default', fallback)
+
+    def __getCommonNumberSettings(self):
+        self.min_is_strict = int(self.parmSettings.get('min_is_strict',0))
+        self.max_is_strict = int(self.parmSettings.get('max_is_strict',0))
+        self.look = getattr(hou.parmLook, self.parmSettings.get('look','Regular'))
+        self.naming_scheme = getattr(hou.parmNamingScheme,self.parmSettings.get('naming_scheme','XYZW'))
+    
+    def __getCommonRampSettings(self):
+        self.default_value = int(self.parmSettings.get('default',2))
+        if 'default_basis' in self.parmSettings: self.default_basis = getattr(hou.rampBasis, self.parmSettings['default_basis'])
+        else: self.default_basis = None
+        self.show_controls = self.parmSettings.get('show_controls', None)
+
+    def makeFloat(self):
+        """Create a generic Float Parameter Template"""
+        self.__getDefaults(0)
+        self.__getCommonNumberSettings()
+        self.min = float(self.parmSettings.get('min',0))
+        self.max = float(self.parmSettings.get('max',1))
+        kwargs = {'default_value':self.default_value,
+                  'min':self.min, 
+                  'max':self.max, 
+                  'min_is_strict':self.min_is_strict, 
+                  'max_is_strict':self.max_is_strict, 
+                  'look':self.look, 
+                  'naming_scheme':self.naming_scheme, 
+                  'disable_when':self.disable_when,
+                  'is_hidden':self.is_hidden, 
+                  'is_label_hidden':self.is_label_hidden, 
+                  'join_with_next':self.join_with_next, 
+                  'help':self.help, 
+                  'script_callback':self.script_callback,
+                  'script_callback_language':self.script_callback_language, 
+                  'tags':self.tags,
+                  'default_expression':self.default_expression, 
+                  'default_expression_language':self.default_expression_language}
+        # Merge direct kwargs
+        kwargs = kwargs | self.direct_kwargs
+        return hou.FloatParmTemplate(self.name, self.label, self.size, **kwargs )
+    
+    def makeInteger(self):
+        """Create a generic Integer Parameter Template"""
+        self.__getMenuKwargs()
+        self.__getDefaults(0)
+        self.__getCommonNumberSettings()
+        self.min = int(self.parmSettings.get('min',0))
+        self.max = int(self.parmSettings.get('max',10))
+        kwargs = {'default_value':self.default_value,
+                  'min':self.min,
+                  'max':self.max,
+                  'min_is_strict':self.min_is_strict,
+                  'max_is_strict':self.max_is_strict,
+                  'look':self.look,
+                  'naming_scheme':self.naming_scheme,
+                  'disable_when':self.disable_when,
+                  'is_hidden':self.is_hidden,
+                  'is_label_hidden':self.is_label_hidden,
+                  'join_with_next':self.join_with_next,
+                  'help':self.help,
+                  'script_callback':self.script_callback,
+                  'script_callback_language':self.script_callback_language, 
+                  'tags':self.tags,
+                  'default_expression':self.default_expression,
+                  'default_expression_language':self.default_expression_language}
+        # Merge menu arguments and any direct kwargs
+        kwargs = kwargs | self.menu_kwargs
+        kwargs = kwargs | self.direct_kwargs
+        return hou.IntParmTemplate(self.name, self.label, self.size, **kwargs )
+    
+    def makeToggle(self):
+        """Create a toggle Parameter Template"""
+        self.default_value = self.parmSettings.get('default',0)
+        self.default_expression = self.parmSettings.get('default_expression','')
+        kwargs = {'default_value':self.default_value,
+                  'disable_when':self.disable_when,
+                  'is_hidden':self.is_hidden,
+                  'is_label_hidden':self.is_label_hidden,
+                  'join_with_next':self.join_with_next,
+                  'help':self.help,
+                  'script_callback':self.script_callback,
+                  'script_callback_language':self.script_callback_language, 
+                  'tags':self.tags,
+                  'default_expression':self.default_expression,
+                  'default_expression_language':self.default_expression_language[0] }
+        # Merge direct kwargs
+        kwargs = kwargs | self.direct_kwargs
+        return hou.ToggleParmTemplate(self.name, self.label, **kwargs )
+
+    def makeRamp(self):
+        """Create a Ramp Parameter Template, as a float type"""
+        self.__getCommonRampSettings()
+        kwargs = {'default_value':self.default_value,
+                  'default_basis':self.default_basis,
+                  'show_controls':self.show_controls,
+                  'disable_when':self.disable_when,
+                  'is_hidden':self.is_hidden,
+                  'help':self.help,
+                  'script_callback':self.script_callback,
+                  'script_callback_language':self.script_callback_language, 
+                  'tags':self.tags,
+                  'default_expression_language':self.default_expression_language[0]}
+        # Merge direct kwargs
+        kwargs = kwargs | self.direct_kwargs
+        return hou.RampParmTemplate(self.name, self.label, hou.rampParmType.Float, **kwargs )
+    
+    def makeColorRamp(self):
+        """Create a Ramp Parameter Template, as a color type"""
+        self.__getCommonRampSettings()
+        if 'color_type' in self.parmSettings: self.default_basis = getattr(hou.colorType, self.parmSettings['color_type'])
+        else: self.color_type = None
+        kwargs = {'default_value':self.default_value,
+                  'default_basis':self.default_basis,
+                  'show_controls':self.show_controls,
+                  'color_type':self.color_type,
+                  'disable_when':self.disable_when,
+                  'is_hidden':self.is_hidden,
+                  'help':self.help,
+                  'script_callback':self.script_callback,
+                  'script_callback_language':self.script_callback_language, 
+                  'tags':self.tags,
+                  'default_expression_language':self.default_expression_language[0]}
+        kwargs = kwargs | self.direct_kwargs
+        return hou.RampParmTemplate(self.name, self.label, hou.rampParmType.Color, **kwargs )
+
+    def makeString(self):
+        """Create a generic String Parameter Template"""
+        self.__getMenuKwargs()
+        # String menus prefer the default value to be one of the item names, not an empty value
+        if self.menu_kwargs['menu_items']:
+            defFallback = self.menu_kwargs['menu_items'][0]
+        else:
+            defFallback=''
+        self.__getDefaults(defFallback)
+        self.naming_scheme = getattr(hou.parmNamingScheme, self.parmSettings.get('naming_scheme', 'Base1'))
+        self.string_type = getattr(hou.stringParmType, self.parmSettings.get('string_type', 'Regular'))
+        self.file_type = getattr(hou.fileType, self.parmSettings.get('file_type', 'Any'))
+        kwargs = {'default_value':self.default_value,
+                  'naming_scheme':self.naming_scheme,
+                  'string_type':self.string_type,
+                  'file_type':self.file_type,
+                  'disable_when':self.disable_when,
+                  'is_hidden':self.is_hidden,
+                  'is_label_hidden':self.is_label_hidden,
+                  'join_with_next':self.join_with_next,
+                  'help':self.help,
+                  'script_callback':self.script_callback,
+                  'script_callback_language':self.script_callback_language, 
+                  'tags':self.tags,
+                  'default_expression':self.default_expression, 
+                  'default_expression_language':self.default_expression_language}
+        # Merge menu arguments and any direct kwargs
+        kwargs = kwargs | self.menu_kwargs
+        kwargs = kwargs | self.direct_kwargs
+        return hou.StringParmTemplate(self.name, self.label, self.size, **kwargs )
+    
+    def makeNodeString(self):
+        """Create a String Parameter Template, as a Node Reference"""
+        self.__getDefaults('')
+        kwargs = {'default_value':self.default_value,
+                  'string_type':hou.stringParmType.NodeReference,
+                  'disable_when':self.disable_when,
+                  'is_hidden':self.is_hidden,
+                  'is_label_hidden':self.is_label_hidden,
+                  'join_with_next':self.join_with_next,
+                  'help':self.help,
+                  'script_callback':self.script_callback,
+                  'script_callback_language':self.script_callback_language, 
+                  'tags':self.tags,
+                  'default_expression':self.default_expression, 
+                  'default_expression_language':self.default_expression_language}
+        # Merge direct kwargs
+        kwargs = kwargs | self.direct_kwargs
+        return hou.StringParmTemplate(self.name, self.label, self.size, **kwargs )
+    
+    def makeDict(self):
+        """Create a Data Parameter Template, as a Key Value Dictionary"""
+        self.__getDefaults('')
+        self.look = getattr(hou.parmLook, self.parmSettings.get('look','Regular'))
+        self.naming_scheme = getattr(hou.parmNamingScheme, self.parmSettings.get('naming_scheme', 'XYZW'))
+        kwargs = {'data_parm_type':hou.dataParmType.KeyValueDictionary,
+                  'look':self.look,
+                  'naming_scheme':self.naming_scheme,
+                  'disable_when':self.disable_when,
+                  'is_hidden':self.is_hidden,
+                  'is_label_hidden':self.is_label_hidden,
+                  'join_with_next':self.join_with_next,
+                  'help':self.help, 
+                  'script_callback':self.script_callback,
+                  'script_callback_language':self.script_callback_language, 
+                  'default_expression':self.default_expression,
+                  'tags':self.tags,
+                  'default_expression':self.default_expression,
+                  'default_expression_language':self.default_expression_language}
+        # Merge direct kwargs
+        kwargs = kwargs | self.direct_kwargs
+        return hou.DataParmTemplate(self.name, self.label, self.size, **kwargs )
+    
+    def makeDirect(self):
+        """Directly create a Parameter Template from a user-defined class string and arguments"""
+        templateClass = getattr(hou, self.parmSettings['template'] )
+        if 'args' in self.parmSettings:
+            # Assume that all argument handling is being done directly in the parameter settings
+            direct_args = self.parmSettings['args']
+            direct_kwargs = self.parmSettings.get('kwargs',{})
+            template = templateClass( *direct_args, **direct_kwargs)
+        else:
+            # Fallback to constructing the basic args if they are not present. Not recommended.
+            print('Using automatic argument construction for '+self.name+'. Explicit arguments recommended through setting args=(foo,bar)')
+            self.label = str(self.parmSettings.get('label',self.label))
+            direct_kwargs = self.parmSettings.get('kwargs',{})
+            template = templateClass( self.name, self.label, self.size, **direct_kwargs )
+        return template
 
 def _adlAddSpareParmsToStandardFolder(node, parmname, refs, definedParmCollection, definedFolderCollection, adlMetadata):
     """
@@ -1007,34 +1276,34 @@ def _adlAddSpareParmsToStandardFolder(node, parmname, refs, definedParmCollectio
             folderLabel = adlFolderSettings.get( 'label', currentname.title().replace("_", " ") )
 
             direct_kwargs = adlFolderSettings.get('kwargs',{})
-            folderaliases = {'collapsible':'Collapsible','simple':'Simple','tabs':'Tabs','radio':'RadioButtons','borderless':'Simple',
+            folder_aliases = {'collapsible':'Collapsible','simple':'Simple','tabs':'Tabs','radio':'RadioButtons','borderless':'Simple',
                              'Collapsible':'Collapsible','Simple':'Simple','Tabs':'Tabs','RadioButtons':'RadioButtons','Borderless':'Simple'}
-            folderfallback = folderaliases.get( adlFolderSettings.get('type','simple'), 'Simple' )
-            folderType = getattr(hou.folderType, adlFolderSettings.get('folder_type', folderfallback) )
-            hidden = adlFolderSettings.get('is_hidden',adlFolderSettings.get('hidden',False))
-            endstabgroup = adlFolderSettings.get('ends_tab_group',adlFolderSettings.get('endstabgroup',False))
+            folder_type = folder_aliases.get( adlFolderSettings.get('folder_type','simple'), 'Simple' )
+            folder_type = getattr(hou.folderType, folder_type )
+            is_hidden = adlFolderSettings.get('is_hidden', False)
+            ends_tab_group = adlFolderSettings.get('ends_tab_group', False)
             tags = adlFolderSettings.get('tags',{})
             # Since borderless isn't actualy a folder type, merge the needed tags with any existing ones
-            if adlFolderSettings.get('type','') == 'borderless' or adlFolderSettings.get('type','') == 'Borderless': tags = tags | {'sidefx::look':'blank'}
+            if adlFolderSettings.get('folder_type','') == 'borderless' or adlFolderSettings.get('folder_type','') == 'Borderless': tags = tags | {'sidefx::look':'blank'}
 
             conditionals = adlFolderSettings.get('conditionals',{})
             # since disablewhen and hidewhen are fairly common usecases, it is possible to directly specify them instead of using the conditionals dict (which still takes priority)
-            disablewhen = adlFolderSettings.get('disablewhen','')
-            if hou.parmCondType.DisableWhen not in conditionals and disablewhen:
-                conditionals[hou.parmCondType.DisableWhen] = disablewhen
-            hidewhen = adlFolderSettings.get('hidewhen','')
-            if hou.parmCondType.HideWhen not in conditionals and hidewhen:
-                conditionals[hou.parmCondType.HideWhen] = hidewhen
+            disable_when = adlFolderSettings.get('disable_when','')
+            if hou.parmCondType.DisableWhen not in conditionals and disable_when:
+                conditionals[hou.parmCondType.DisableWhen] = disable_when
+            hide_when = adlFolderSettings.get('hide_when','')
+            if hou.parmCondType.HideWhen not in conditionals and hide_when:
+                conditionals[hou.parmCondType.HideWhen] = hide_when
 
             tab_conditionals = adlFolderSettings.get('tab_conditionals',{})
-            tab_disablewhen = adlFolderSettings.get('tab_disablewhen','')
-            if hou.parmCondType.DisableWhen not in tab_conditionals and tab_disablewhen:
-                tab_conditionals[hou.parmCondType.DisableWhen] = tab_disablewhen
-            tab_hidewhen = adlFolderSettings.get('tab_hidewhen','')
-            if hou.parmCondType.HideWhen not in conditionals and tab_hidewhen:
-                tab_conditionals[hou.parmCondType.HideWhen] = tab_hidewhen
+            tab_disable_when = adlFolderSettings.get('tab_disable_when','')
+            if hou.parmCondType.DisableWhen not in tab_conditionals and tab_disable_when:
+                tab_conditionals[hou.parmCondType.DisableWhen] = tab_disable_when
+            tab_hide_when = adlFolderSettings.get('tab_hide_when','')
+            if hou.parmCondType.HideWhen not in conditionals and tab_hide_when:
+                tab_conditionals[hou.parmCondType.HideWhen] = tab_hide_when
 
-            kwargs = {'folder_type':folderType,'is_hidden':hidden,'ends_tab_group':endstabgroup,'tags':tags,'conditionals':conditionals,'tab_conditionals':tab_conditionals}
+            kwargs = {'folder_type':folder_type,'is_hidden':is_hidden,'ends_tab_group':ends_tab_group,'tags':tags,'conditionals':conditionals,'tab_conditionals':tab_conditionals}
             kwargs = kwargs | direct_kwargs
 
             if ptg.find(currentname):
@@ -1138,55 +1407,6 @@ def _adlAddSpareParmsToStandardFolder(node, parmname, refs, definedParmCollectio
             ptg.appendToFolder(manualindices, template)
     node.setParmTemplateGroup(ptg)
 
-# Turns a standard dict into one with keys and values stored in separate tuples
-# I think maybe you can do this with dict.keys(), but the output looked weird
-def _dictSplitter( dict):
-    dictSets = {}
-    if dict:
-        keySet = []
-        valSet = []
-        for key in dict:
-            keySet.append(key)
-            valSet.append(dict[key])
-
-        dictSets['keys']=tuple(keySet)
-        dictSets['vals']=tuple(valSet)
-    else:
-        dictSets['keys']=()
-        dictSets['vals']=()
-    return dictSets
-
-# Create a dict of kwargs relevant to creating menus
-def _initializeMenuKwargs(adlParmSettings):
-    menu_kwargs = {}
-    if 'menu_pairs' in adlParmSettings:
-        splitDict = _dictSplitter(adlParmSettings.get('menu_pairs',{'opt1':'Option 1','opt2':'Option 2'}))
-        menu_kwargs['menu_items'] = splitDict.get('keys',())
-        menu_kwargs['menu_labels'] = splitDict.get('vals',())
-    elif 'menu_items' in adlParmSettings:
-        menu_kwargs['menu_items'] = adlParmSettings['menu_items']
-        menu_kwargs['menu_labels'] = adlParmSettings.get('menu_labels',())
-    else:
-        menu_kwargs['menu_items'] = ()
-        menu_kwargs['menu_labels'] = ()
-    if 'item_generator_script' in adlParmSettings:
-        menu_kwargs['item_generator_script'] = adlParmSettings['item_generator_script']                 
-        menu_kwargs['item_generator_script_language'] = getattr(hou.scriptLanguage, adlParmSettings.get('item_generator_script_language','Python') )
-        menu_kwargs['menu_type'] = getattr(hou.menuType, adlParmSettings.get('menu_type','Normal') )
-    else:
-        menu_kwargs['item_generator_script'] = ''
-        menu_kwargs['item_generator_script_language'] = None
-        menu_kwargs['menu_type'] = hou.menuType.Normal
-    menu_kwargs['icon_names'] = adlParmSettings.get('icon_names',())
-    return menu_kwargs
-
-# This function ensures that kwargs which expect a tuple are given a tuple, even if the input is only a single value
-def _initializeTupleValues(targetDict, targetKey, fallback):
-    tupleVals = targetDict.get(targetKey,fallback)
-    if( isinstance(tupleVals, tuple) != 1):
-        tupleVals = tuple([tupleVals],)
-    return tupleVals
-
 # This adds support for inline hscript ch calls for use in OpenCL, (this is most useful for compiler overrides, though generally as a last resort)
 def _hscriptRefsFromChCalls(node, code, definedParmCollection, adlMetadata):
     # Remove comments
@@ -1223,81 +1443,30 @@ def _hscriptRefsFromChCalls(node, code, definedParmCollection, adlMetadata):
         else:
             # If a corresponding setting collection is found, make use of the parameter configuration system
             adlParmSettings = definedParmCollection[name]
+            tm = adlTemplateMaker(adlParmSettings, name, label, size)
 
             if 'template' in adlParmSettings:
                 # If enabled, this uses the template string to decide which class is used, with args and kwargs being taken directly from the dictionary (if they exist)
-                template = _templateFromDirect(adlParmSettings, name, label, size)
+                template = tm.makeDirect()
 
             else:
+                tm.getCommonSettings()
 
-                # Common parameter settings are explicitly defined here, with more particular ones being set later
-                hidden = int(adlParmSettings.get('hidden',0))
-                hjoin = int(adlParmSettings.get('hjoin',0))
-                minlock = int(adlParmSettings.get('minlock',0))
-                maxlock = int(adlParmSettings.get('maxlock',0))
-                tagdict = dict(adlParmSettings.get('tags',{}))
-                labelval = str(adlParmSettings.get('label',label))
-                sizeval = int(adlParmSettings.get('size',size))
-                label_hidden = int(adlParmSettings.get('label_hidden',0))
-                helpval = str(adlParmSettings.get('help',''))
-                defaultExpressionLanguage = _initializeTupleValues({'deflang': getattr(hou.scriptLanguage, adlParmSettings.get('default_expression_language','Hscript')) }, 'deflang',hou.scriptLanguage.Hscript)
-
-                disablewhen = adlParmSettings.get('disablewhen','')
-                hidewhen = adlParmSettings.get('hidewhen','')
-                
-                direct_kwargs = adlParmSettings.get('kwargs',{})
-                type = adlParmSettings.get('type','')
-
-                if type.capitalize() == 'Toggle':
-                    defval = adlParmSettings.get('default',0)
-                    defaultExpression = adlParmSettings.get('default_expression','')
-                    kwargs = {'default_value':defval, 'default_expression':defaultExpression, 'is_hidden':hidden, 'join_with_next':hjoin, 
-                                'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 'default_expression_language':defaultExpressionLanguage[0] }
-                    kwargs = kwargs | direct_kwargs
-                    template = hou.ToggleParmTemplate(name, labelval, **kwargs )
+                if adlParmSettings.get('is_toggle',0):
+                    template = tm.makeToggle()
 
                 else:
                     # If not using manual template definition and there is not an appropriate type, use the existing template categorization
                     if call == "chs":
-                        menu_kwargs = _initializeMenuKwargs(adlParmSettings)
-                        defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
-                        defFallback=''
-                        # String menus prefer the default value to be one of the item names, not an empty value
-                        if menu_kwargs['menu_items']: defFallback = menu_kwargs['menu_items'][0]
-                        defvals = _initializeTupleValues(adlParmSettings,'default',defFallback)
-                        kwargs = { 'default_value':defvals, 'default_expression':defaultExpression, 'is_hidden':hidden, 'join_with_next':hjoin, 'disable_when':disablewhen, 
-                                    'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 'default_expression_language':defaultExpressionLanguage}
-                        # Merge menu arguments and any direct kwargs
-                        kwargs = kwargs | menu_kwargs
-                        kwargs = kwargs | direct_kwargs
-                        template = hou.StringParmTemplate(name, labelval, sizeval, **kwargs )
+                        template = tm.makeString()
                     elif call == "chf":
-                        defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
-                        defvals = _initializeTupleValues(adlParmSettings,'default',0)
-                        floatMin = float(adlParmSettings.get('min',0))
-                        floatMax = float(adlParmSettings.get('max',1))
-                        kwargs = {'min':floatMin, 'max':floatMax, 'default_value':defvals, 'default_expression':defaultExpression, 'is_hidden':hidden, 'join_with_next':hjoin,
-                                    'min_is_strict':minlock, 'max_is_strict':maxlock, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 
-                                    'default_expression_language':defaultExpressionLanguage}
-                        kwargs = kwargs | direct_kwargs
-                        template = hou.FloatParmTemplate(name, labelval, sizeval, **kwargs )
+                        template = tm.makeFloat()
                     else:
-                        menu_kwargs = _initializeMenuKwargs(adlParmSettings)
-                        defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
-                        defvals = _initializeTupleValues(adlParmSettings,'default',0)
-                        intMin = int(adlParmSettings.get('min',0))
-                        intMax = int(adlParmSettings.get('max',10))
-                        kwargs = {'default_value':defvals, 'default_expression':defaultExpression, 'min':intMin, 'max':intMax, 'is_hidden':hidden, 'join_with_next':hjoin, 
-                                    'min_is_strict':minlock, 'max_is_strict':maxlock, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 
-                                    'default_expression_language':defaultExpressionLanguage}
-                        # Merge menu arguments and any direct kwargs
-                        kwargs = kwargs | menu_kwargs
-                        kwargs = kwargs | direct_kwargs
-                        template = hou.IntParmTemplate(name, labelval, sizeval, **kwargs )
+                        template = tm.makeInteger()
                     
             # Apply any hidewhen conditions, since they can't be set directly in the ParmTemplate arguments
-            if 'hidewhen' in adlParmSettings:
-                template.setConditional(hou.parmCondType.HideWhen, hidewhen)  
+            if 'hide_when' in adlParmSettings:
+                template.setConditional(hou.parmCondType.HideWhen, tm.hide_when) 
 
 
         exparm = node.parm(name) or node.parmTuple(name)
@@ -1613,72 +1782,33 @@ def createSpareParmsFromOCLBindings(node, parmname):
                 else:
                     # If a corresponding setting collection is found, make use of the parameter configuration system
                     adlParmSettings = definedParmCollection[name]
+                    tm = adlTemplateMaker(adlParmSettings, internalname, label, tuplesize)
 
                     if 'template' in adlParmSettings:
                         # If enabled, this uses the template string to decide which class is used, with args and kwargs being taken directly from the dictionary (if they exist)
-                        template = _templateFromDirect(adlParmSettings, internalname, label, tuplesize)
+                        template = tm.makeDirect()
 
                     else:
-
-                        # Common parameter settings are explicitly defined here, with more particular ones being set later
-                        hidden = int(adlParmSettings.get('hidden',0))
-                        hjoin = int(adlParmSettings.get('hjoin',0))
-                        minlock = int(adlParmSettings.get('minlock',0))
-                        maxlock = int(adlParmSettings.get('maxlock',0))
-                        tagdict = dict(adlParmSettings.get('tags',{}))
-                        labelval = str(adlParmSettings.get('label',label))
-                        sizeval = int(adlParmSettings.get('size',tuplesize))
-                        label_hidden = int(adlParmSettings.get('label_hidden',0))
-                        helpval = str(adlParmSettings.get('help',''))
-                        defaultExpressionLanguage = _initializeTupleValues({'deflang': getattr(hou.scriptLanguage, adlParmSettings.get('default_expression_language','Hscript')) }, 'deflang',hou.scriptLanguage.Hscript)
-
-                        disablewhen = adlParmSettings.get('disablewhen','')
-                        hidewhen = adlParmSettings.get('hidewhen','')
-                        
-                        direct_kwargs = adlParmSettings.get('kwargs',{})
-                        type = adlParmSettings.get('type','')
-
-                        if type.capitalize() == 'Toggle':
-                            defval = adlParmSettings.get('default',0)
-                            defaultExpression = adlParmSettings.get('default_expression','')
-                            kwargs = {'default_value':defval, 'default_expression':defaultExpression, 'is_hidden':hidden, 'join_with_next':hjoin, 
-                                      'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 'default_expression_language':defaultExpressionLanguage[0] }
-                            kwargs = kwargs | direct_kwargs
-                            template = hou.ToggleParmTemplate(internalname, labelval, **kwargs )
+                        tm.getCommonSettings()
+            
+                        if adlParmSettings.get('is_toggle',0):
+                            template = tm.makeToggle()
 
                         else:
                             # If not using manual template definition and there is not an appropriate type, use the existing template categorization
                             if isramp:
-                                kwargs = {'is_hidden':hidden, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval}
-                                kwargs = kwargs | direct_kwargs
-                                template = hou.RampParmTemplate(internalname, labelval, ramptype, **kwargs )
+                                if ramptype == hou.rampParmType.Float:
+                                    template = tm.makeRamp()
+                                else:
+                                    template = tm.makeColorRamp()
                             elif isint:
-                                menu_kwargs = _initializeMenuKwargs(adlParmSettings)
-                                defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
-                                defvals = _initializeTupleValues(adlParmSettings,'default',0)
-                                intMin = int(adlParmSettings.get('min',0))
-                                intMax = int(adlParmSettings.get('max',10))
-                                kwargs = {'default_value':defvals, 'default_expression':defaultExpression, 'min':intMin, 'max':intMax, 'is_hidden':hidden, 'join_with_next':hjoin, 
-                                        'min_is_strict':minlock, 'max_is_strict':maxlock, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 
-                                        'default_expression_language':defaultExpressionLanguage}
-                                # Merge menu arguments and any direct kwargs
-                                kwargs = kwargs | menu_kwargs
-                                kwargs = kwargs | direct_kwargs
-                                template = hou.IntParmTemplate(internalname, labelval, sizeval, **kwargs )
+                                template = tm.makeInteger()
                             else:
-                                defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
-                                defvals = _initializeTupleValues(adlParmSettings,'default',0)
-                                floatMin = float(adlParmSettings.get('min',0))
-                                floatMax = float(adlParmSettings.get('max',1))
-                                kwargs = {'min':floatMin, 'max':floatMax, 'default_value':defvals, 'default_expression':defaultExpression, 'is_hidden':hidden, 'join_with_next':hjoin,
-                                        'min_is_strict':minlock, 'max_is_strict':maxlock, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 
-                                        'default_expression_language':defaultExpressionLanguage}
-                                kwargs = kwargs | direct_kwargs
-                                template = hou.FloatParmTemplate(internalname, labelval, sizeval, **kwargs )
+                                template = tm.makeFloat()
 
                     # Apply any hidewhen conditions, since they can't be set directly in the ParmTemplate arguments
-                    if 'hidewhen' in adlParmSettings:
-                        template.setConditional(hou.parmCondType.HideWhen, hidewhen)  
+                    if 'hide_when' in adlParmSettings:
+                        template.setConditional(hou.parmCondType.HideWhen, tm.hide_when) 
 
                 # Check if we have an existing parm.
                 # note the user may have removed an explicit binding,
@@ -1888,105 +2018,39 @@ def createSpareParmsFromChCalls(node, parmname):
         else:
             # If a corresponding setting collection is found, make use of the parameter configuration system
             adlParmSettings = definedParmCollection[name]
+            tm = adlTemplateMaker(adlParmSettings, name, label, size)
 
             if 'template' in adlParmSettings:
                 # If enabled, this uses the template string to decide which class is used, with args and kwargs being taken directly from the dictionary (if they exist)
-                template = _templateFromDirect(adlParmSettings, name, label, size)
+                template = tm.makeDirect()
 
             else:
-
-                # Common parameter settings are explicitly defined here, with more particular ones being set later
-                hidden = int(adlParmSettings.get('hidden',0))
-                hjoin = int(adlParmSettings.get('hjoin',0))
-                minlock = int(adlParmSettings.get('minlock',0))
-                maxlock = int(adlParmSettings.get('maxlock',0))
-                tagdict = dict(adlParmSettings.get('tags',{}))
-                labelval = str(adlParmSettings.get('label',label))
-                sizeval = int(adlParmSettings.get('size',size))
-                label_hidden = int(adlParmSettings.get('label_hidden',0))
-                helpval = str(adlParmSettings.get('help',''))
-                defaultExpressionLanguage = _initializeTupleValues({'deflang': getattr(hou.scriptLanguage, adlParmSettings.get('default_expression_language','Hscript')) }, 'deflang',hou.scriptLanguage.Hscript)
-
-                disablewhen = adlParmSettings.get('disablewhen','')
-                hidewhen = adlParmSettings.get('hidewhen','')
-                
-                direct_kwargs = adlParmSettings.get('kwargs',{})
-                type = adlParmSettings.get('type','')
-
-                if type.capitalize() == 'Toggle':
-                    defval = adlParmSettings.get('default',0)
-                    defaultExpression = adlParmSettings.get('default_expression','')
-                    kwargs = {'default_value':defval, 'default_expression':defaultExpression, 'is_hidden':hidden, 'join_with_next':hjoin, 
-                              'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 'default_expression_language':defaultExpressionLanguage[0] }
-                    kwargs = kwargs | direct_kwargs
-                    template = hou.ToggleParmTemplate(name, labelval, **kwargs )
+                tm.getCommonSettings()
+    
+                if adlParmSettings.get('is_toggle',0):
+                    template = tm.makeToggle()
 
                 else:
                     # If not using manual template definition and there is not an appropriate type, use the existing template categorization
                     if call in ("vector(chramp", "vector(chrampderiv"):
-                        # Result was cast to a vector, assume it's a color
-                        kwargs = {'is_hidden':hidden, 'join_with_next':hjoin, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval}
-                        kwargs = kwargs | direct_kwargs
-                        template = hou.RampParmTemplate(name, labelval, hou.rampParmType.Color, **kwargs )
+                        template = tm.makeColorRamp()
                     elif call in ("chramp", "chrampderiv"):
                         # No explicit cast, assume it's a float
-                        kwargs = {'is_hidden':hidden, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval}
-                        kwargs = kwargs | direct_kwargs
-                        template = hou.RampParmTemplate(name, labelval, hou.rampParmType.Float, **kwargs )
+                        template = tm.makeRamp()
                     elif call == "chs":
-                        menu_kwargs = _initializeMenuKwargs(adlParmSettings)
-                        defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
-                        defFallback=''
-                        # String menus prefer the default value to be one of the item names, not an empty value
-                        if menu_kwargs['menu_items']: defFallback = menu_kwargs['menu_items'][0]
-                        defvals = _initializeTupleValues(adlParmSettings,'default',defFallback)
-                        kwargs = { 'default_value':defvals, 'default_expression':defaultExpression, 'is_hidden':hidden, 'join_with_next':hjoin, 'disable_when':disablewhen, 
-                                  'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 'default_expression_language':defaultExpressionLanguage}
-                        # Merge menu arguments and any direct kwargs
-                        kwargs = kwargs | menu_kwargs
-                        kwargs = kwargs | direct_kwargs
-                        template = hou.StringParmTemplate(name, labelval, sizeval, **kwargs )
+                        template = tm.makeString()
                     elif call == "chsop":
-                        defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
-                        defvals = _initializeTupleValues(adlParmSettings,'default','')
-                        kwargs = {'string_type':hou.stringParmType.NodeReference, 'default_value':defvals, 'default_expression':defaultExpression, 'is_hidden':hidden, 
-                                  'join_with_next':hjoin, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 
-                                  'default_expression_language':defaultExpressionLanguage}
-                        kwargs = kwargs | direct_kwargs
-                        template = hou.StringParmTemplate(name, labelval, sizeval, **kwargs )
+                        template = tm.makeNodeString()
                     elif call == "chi":
-                        menu_kwargs = _initializeMenuKwargs(adlParmSettings)
-                        defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
-                        defvals = _initializeTupleValues(adlParmSettings,'default',0)
-                        intMin = int(adlParmSettings.get('min',0))
-                        intMax = int(adlParmSettings.get('max',10))
-                        kwargs = {'default_value':defvals, 'default_expression':defaultExpression, 'min':intMin, 'max':intMax, 'is_hidden':hidden, 'join_with_next':hjoin, 
-                                  'min_is_strict':minlock, 'max_is_strict':maxlock, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 
-                                  'default_expression_language':defaultExpressionLanguage}
-                        # Merge menu arguments and any direct kwargs
-                        kwargs = kwargs | menu_kwargs
-                        kwargs = kwargs | direct_kwargs
-                        template = hou.IntParmTemplate(name, labelval, sizeval, **kwargs )
+                        template = tm.makeInteger()
                     elif call == "chdict":
-                        defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
-                        kwargs = {'data_parm_type':hou.dataParmType.KeyValueDictionary, 'is_hidden':hidden, 'join_with_next':hjoin,'default_expression':defaultExpression, 
-                                  'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 'default_expression_language':defaultExpressionLanguage}
-                        kwargs = kwargs | direct_kwargs
-                        template = hou.DataParmTemplate(name, labelval, sizeval, **kwargs )
+                        template = tm.makeDict()
                     else:
-                        defaultExpression = _initializeTupleValues(adlParmSettings,'default_expression','')
-                        defvals = _initializeTupleValues(adlParmSettings,'default',0)
-                        floatMin = float(adlParmSettings.get('min',0))
-                        floatMax = float(adlParmSettings.get('max',1))
-                        kwargs = {'min':floatMin, 'max':floatMax, 'default_value':defvals, 'default_expression':defaultExpression, 'is_hidden':hidden, 'join_with_next':hjoin,
-                                  'min_is_strict':minlock, 'max_is_strict':maxlock, 'disable_when':disablewhen, 'tags':tagdict, 'help':helpval, 'is_label_hidden':label_hidden, 
-                                  'default_expression_language':defaultExpressionLanguage}
-                        kwargs = kwargs | direct_kwargs
-                        template = hou.FloatParmTemplate(name, labelval, sizeval, **kwargs )
+                        template = tm.makeFloat()
                   
             # Apply any hidewhen conditions, since they can't be set directly in the ParmTemplate arguments
-            if 'hidewhen' in adlParmSettings:
-                template.setConditional(hou.parmCondType.HideWhen, hidewhen)  
+            if 'hide_when' in adlParmSettings:
+                template.setConditional(hou.parmCondType.HideWhen, tm.hide_when)  
 
 
         exparm = node.parm(name) or node.parmTuple(name)
