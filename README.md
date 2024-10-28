@@ -15,7 +15,7 @@ Small snippets demonstrating individual parts of the parser can be found [here](
 # Overview
 ### Configuration
 All configurations are specified within a set of double brackets. With no prefix, these are assumed to be for standard parameters,
-but if they are led by either "folder" or "meta" you can specify folders or whole-snippet settings. You can either specify a specific parameter to target through `[[parm=my_parameter]]`, or allow the script to automatically find the closest parameter reference before it.\
+but if they are led by either "folder" or "meta" you can specify folders or whole-snippet settings. You can either specify a specific parameter to target through `[[parm=my_parameter]]`, or allow the script to automatically find the closest parameter reference before it.
 ###### :warning: ***Automatic parameter finding can only be done in VEX. They must be specifically declared in OpenCL.***
 VEX Example:
 ```
