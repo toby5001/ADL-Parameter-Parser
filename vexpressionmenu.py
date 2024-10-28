@@ -972,7 +972,8 @@ def _getAdlSettings(code, settingname, itemTitle, enablelocating):
 
     return definedParmCollection
 
-class adlTemplateMaker:
+class _adlTemplateMaker:
+    """Main class for taking an input dictionary of parameter settings and creating a template from it."""
     def __init__(self, parmSettings, name, label, size):
         self.parmSettings = parmSettings
         self.name = name
@@ -1443,7 +1444,7 @@ def _hscriptRefsFromChCalls(node, code, definedParmCollection, adlMetadata):
         else:
             # If a corresponding setting collection is found, make use of the parameter configuration system
             adlParmSettings = definedParmCollection[name]
-            tm = adlTemplateMaker(adlParmSettings, name, label, size)
+            tm = _adlTemplateMaker(adlParmSettings, name, label, size)
 
             if 'template' in adlParmSettings:
                 # If enabled, this uses the template string to decide which class is used, with args and kwargs being taken directly from the dictionary (if they exist)
@@ -1782,7 +1783,7 @@ def createSpareParmsFromOCLBindings(node, parmname):
                 else:
                     # If a corresponding setting collection is found, make use of the parameter configuration system
                     adlParmSettings = definedParmCollection[name]
-                    tm = adlTemplateMaker(adlParmSettings, internalname, label, tuplesize)
+                    tm = _adlTemplateMaker(adlParmSettings, internalname, label, tuplesize)
 
                     if 'template' in adlParmSettings:
                         # If enabled, this uses the template string to decide which class is used, with args and kwargs being taken directly from the dictionary (if they exist)
@@ -2018,7 +2019,7 @@ def createSpareParmsFromChCalls(node, parmname):
         else:
             # If a corresponding setting collection is found, make use of the parameter configuration system
             adlParmSettings = definedParmCollection[name]
-            tm = adlTemplateMaker(adlParmSettings, name, label, size)
+            tm = _adlTemplateMaker(adlParmSettings, name, label, size)
 
             if 'template' in adlParmSettings:
                 # If enabled, this uses the template string to decide which class is used, with args and kwargs being taken directly from the dictionary (if they exist)
