@@ -1277,9 +1277,21 @@ def _adlAddSpareParmsToStandardFolder(node, parmname, refs, definedParmCollectio
             folderLabel = adlFolderSettings.get( 'label', currentname.title().replace("_", " ") )
 
             direct_kwargs = adlFolderSettings.get('kwargs',{})
-            folder_aliases = {'collapsible':'Collapsible','simple':'Simple','tabs':'Tabs','radio':'RadioButtons','borderless':'Simple',
-                             'Collapsible':'Collapsible','Simple':'Simple','Tabs':'Tabs','RadioButtons':'RadioButtons','Borderless':'Simple'}
-            folder_type = folder_aliases.get( adlFolderSettings.get('folder_type','simple'), 'Simple' )
+            folder_aliases = {'collapsible':'Collapsible',
+                              'simple':'Simple',
+                              'tabs':'Tabs',
+                              'radiobuttons':'RadioButtons',
+                              'multiparmblock':'MultiparmBlock',
+                              'scrollingmultiparmblock':'ScrollingMultiparmBlock',
+                              'tabbedmultiparmblock':'TabbedMultiparmBlock',
+                              'importblock':'ImportBlock',
+                              'borderless':'Simple',
+                              'Borderless':'Simple'}
+            folder_type = adlFolderSettings.get('folder_type', 'Simple')
+            if folder_type in folder_aliases:
+                # If an alias is found, swap it out for the input value, otherwise leave the original
+                folder_type= folder_aliases[folder_type]
+                
             folder_type = getattr(hou.folderType, folder_type )
             is_hidden = adlFolderSettings.get('is_hidden', False)
             ends_tab_group = adlFolderSettings.get('ends_tab_group', False)
@@ -1401,11 +1413,15 @@ def _adlAddSpareParmsToStandardFolder(node, parmname, refs, definedParmCollectio
         else:
             manualindices = ptg.findIndices(foldername)
 
-        exparm = node.parm(name) or node.parmTuple(name)
-        if exparm:
-            ptg.replace(name, template)
+        if name in definedFolderCollection:
+            # The existing parameter is a folder, assume this parameter is reading a value from it
+            continue
         else:
-            ptg.appendToFolder(manualindices, template)
+            exparm = node.parm(name) or node.parmTuple(name)
+            if exparm:
+                ptg.replace(name, template)
+            else:
+                ptg.appendToFolder(manualindices, template)
     node.setParmTemplateGroup(ptg)
 
 # This adds support for inline hscript ch calls for use in OpenCL, (this is most useful for compiler overrides, though generally as a last resort)
@@ -2056,6 +2072,9 @@ def createSpareParmsFromChCalls(node, parmname):
 
         exparm = node.parm(name) or node.parmTuple(name)
         if exparm:
+            if name in definedFolderCollection:
+                # The existing parameter is a folder, assume this parameter is reading a value from it
+                continue
             if not exparm.isSpare():
                 # The existing parameter isn't a spare, so just skip it
                 continue
