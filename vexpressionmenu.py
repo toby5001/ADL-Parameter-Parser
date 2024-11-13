@@ -977,6 +977,8 @@ class _adlTemplateMaker:
     def __init__(self, parmSettings, name, label, size):
         self.parmSettings = parmSettings
         self.name = name
+        if self.parmSettings.get('is_multiparm', 0):
+            self.name = name + '#'
         self.label = str(self.parmSettings.get('label',label))
         self.size = int(self.parmSettings.get('size',size))
 
