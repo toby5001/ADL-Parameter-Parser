@@ -5,6 +5,8 @@ import snippetmenu
 import re
 import ast
 
+__HVER__ = hou.applicationVersion()
+
 # Change these to change the prefix that the script looks for at the begining of a paramter specification (eg: folder[[name=folder_one,type=collapsible]] )
 _adlMetaPrefix = 'meta'
 _adlParmPrefix = 'parm'
@@ -626,26 +628,52 @@ def ensureSnippetsAreLoaded():
         _vexsnippets_sol.update(snippets_sol)
 
 
-def buildSnippetMenu(snippetname):
+def buildSnippetMenu(snippetname, multiparm_indices=[], kwargs: dict = {}):
     """ Given a snippetname, determine what
-        snippets should be generated
+        snippets should be generated.
+        Optionally provide the kwargs dict to extend the list with available recipes.
     """
     ensureSnippetsAreLoaded()
-    if snippetname in _vexsnippets:
+    if __HVER__[0] >= 21:
+        snippetlist = []
+        if snippetname in _vexsnippets:
+            snippetlist.extend(snippetmenu.expandMultiparms(
+                list(_vexsnippets[snippetname]),
+                multiparm_indices))
+
+        if kwargs:
+            from recipeutils import buildSnippetMenuFromRecipes
+            snippetlist.extend(buildSnippetMenuFromRecipes(kwargs))
+
+        if snippetlist:
+            return snippetlist
+    elif snippetname in _vexsnippets:
         return list(_vexsnippets[snippetname])
-    else:
-        return ["", "None"]
+    return ["", "None"]
 
 
-def buildSingleLineSnippetMenu(snippetname):
+def buildSingleLineSnippetMenu(snippetname, multiparm_indices=[], kwargs: dict = {}):
     """ Given a snippetname, determine what
-        snippets should be generated
+        snippets should be generated.
+        Optionally provide the kwargs dict to extend the list with available recipes.
     """
     ensureSnippetsAreLoaded()
-    if snippetname in _vexsnippets_sol:
+    if __HVER__[0] >= 21:
+        snippetlist = []
+        if snippetname in _vexsnippets_sol:
+            snippetlist.extend(snippetmenu.expandMultiparms(
+                list(_vexsnippets_sol[snippetname]),
+                multiparm_indices))
+
+        if kwargs:
+            from recipeutils import buildSnippetMenuFromRecipes
+            snippetlist.extend(buildSnippetMenuFromRecipes(kwargs))
+
+        if snippetlist:
+            return snippetlist
+    elif snippetname in _vexsnippets_sol:
         return list(_vexsnippets_sol[snippetname])
-    else:
-        return ["", "None"]
+    return ["", "None"]
 
 
 # Strings representing channel calls
@@ -1617,20 +1645,44 @@ def createSpareParmsFromOCLBindings(node, parmname):
 
     # Extract bindings
     bindings = hou.text.oclExtractBindings(code)
+    runover = ''
+    if __HVER__[0] >= 21:
+        runover = hou.text.oclExtractRunOver(code)
 
     channellinks = []
     ramplinks = []
     refs = []
 
+    ispython = False
+    if parm.parmTemplate().tags().get('editorlang', '') == 'python':
+        ispython = True
     iscop = False
     # To allow for this script to be backwards-compatible with Houdini versions < 20.5, only check for Cops in certain cases
-    houversion = hou.applicationVersion()
-    if houversion[0]+(houversion[1]/10) >= 20.5:
+    if __HVER__[0]+(__HVER__[1]/10) >= 20.5:
         if node.type().category() == hou.copNodeTypeCategory():
             iscop = True
+    hasoutputlayer = False
+
+    # apply the runover.
+    if runover != '' and not ispython:
+        r = node.parm('runover')
+        if r is None:
+            r = node.parm('options_runover')
+        if r is not None:
+            try:
+                r.set(runover)
+            except hou.OperationFailed:
+                try:
+                    if runover == 'field':
+                        r.set('allfields')
+                    if runover == 'attribute':
+                        r.set('firstattribute')
+                except hou.OperationFailed:
+                    # likely an unsupported run over.
+                    pass
 
     # Sadly, SOP and DOP opencl have completely different
-    # binding names.  Use the base bindings type to differntiate
+    # binding names.  Use the base bindings type to differentiate
     if node.parm('bindings') is not None:
         # SOP based (also COP)
         bindparm = 'bindings'
@@ -1663,6 +1715,7 @@ def createSpareParmsFromOCLBindings(node, parmname):
             'optional' : '_optional',
             'defval' : '_defval',
             'timescale' : '_timescale',
+            'sval' : '_sval',
             'intval' : '_intval',
             'fval'   : '_fval',
             'v2val'  : '_v2val',
@@ -1717,7 +1770,9 @@ def createSpareParmsFromOCLBindings(node, parmname):
     # Loop over each binding to see if it exists on explicit bindings,
     # if not add it.
     for binding in bindings:
-        isgeo = binding['type'] in ('attribute', 'volume', 'vdb')
+        isgeo = binding['type'] in ('attribute', 'volume', 'vdb', 'geo')
+        isgeodata = binding['type'] in ('attribute', 'volume', 'vdb')
+        isvdb = binding['type'] in ('vdb', )
         islayer = binding['type'] == 'layer'
 
         # Search our node's bindings...
@@ -1732,10 +1787,11 @@ def createSpareParmsFromOCLBindings(node, parmname):
             requiresparm = False
             tuplesize = 1
             isint = False
+            isstring = False
             isramp = False
 
             # Add to our list if we should have spare parms...
-            if binding['type'] in ('int', 'float', 'float2', 'float3', 'float4'):
+            if binding['type'] in ('string', 'int', 'float', 'float2', 'float3', 'float4'):
                 requiresparm = True
                 if binding['type'] == 'int':
                     isint = True
@@ -1748,10 +1804,14 @@ def createSpareParmsFromOCLBindings(node, parmname):
                     tuplesize = 3
                 if binding['type'] == 'float4':
                     tuplesize = 4
+                if binding['type'] == 'string':
+                    isstring = True
+                    if not ispython:
+                        requiresparm = False
 
             # If it is optional and has a defval we want to
             # trigger it
-            if isgeo and binding['readable'] and binding['optional'] and binding['defval']:
+            if isgeodata and binding['readable'] and binding['optional'] and binding['defval']:
                 requiresparm = True
                 # Some cases we don't support...
                 if binding['type'] == 'attribute':
@@ -1765,6 +1825,9 @@ def createSpareParmsFromOCLBindings(node, parmname):
                         tuplesize = binding['attribsize']
                         if tuplesize not in (1, 3, 4):
                             requiresparm = False
+                # Python doesn't support optional
+                if ispython:
+                    requiresparm = False
 
             # extraparm does not work for layer, and may not be wanted
             # if islayer and binding['readable'] and binding['optional'] and binding['defval']:
@@ -1788,8 +1851,9 @@ def createSpareParmsFromOCLBindings(node, parmname):
                 # In cops we have prefixed internal parms so we don't
                 # have to worry about conflicts so much, but we want to
                 # fall back to _val if that already existed.
+                # This is also true for python snippets.
                 exparm = node.parm(internalname) or node.parmTuple(internalname)
-                if not exparm and iscop:
+                if not exparm and (iscop or ispython):
                     internalname = name
 
                 if name not in definedParmCollection:
@@ -1797,6 +1861,8 @@ def createSpareParmsFromOCLBindings(node, parmname):
                         template = hou.RampParmTemplate(internalname, label, ramptype)
                     elif isint:
                         template = hou.IntParmTemplate(internalname, label, tuplesize)
+                    elif isstring:
+                        template = hou.StringParmTemplate(internalname, label, tuplesize)
                     else:
                         template = hou.FloatParmTemplate(internalname, label, tuplesize, min=0, max=1)
                 else:
@@ -1846,7 +1912,7 @@ def createSpareParmsFromOCLBindings(node, parmname):
                 for key in bindparmsuffix:
                     if bindparmsuffix[key] is None:
                         continue
-                    if key in ('intval', 'fval', 'v2val', 'v3val', 'v4val', 'v4bval', 'm4val', 'ramp'):
+                    if key in ('sval', 'intval', 'fval', 'v2val', 'v3val', 'v4val', 'v4bval', 'm4val', 'ramp'):
                         continue
                     keyparmname = bindparmprefix + str(numbind) + bindparmsuffix[key]
                     parm = node.parm(keyparmname) or node.parmTuple(keyparmname)
@@ -1857,6 +1923,8 @@ def createSpareParmsFromOCLBindings(node, parmname):
                 else:
                     if isint:
                         t = 'intval'
+                    elif isstring:
+                        t = 'sval'
                     elif tuplesize == 1:
                         t = 'fval'
                     else:
@@ -1880,6 +1948,19 @@ def createSpareParmsFromOCLBindings(node, parmname):
                 node.parm('input' + str(i) + '_name').set(lookupname)
                 if isgeo:
                     layertype = 'geo'
+                    # If the binding name matches port name, we assume
+                    # a pure VDB...  We need to know the type though.
+                    if isvdb and lookupname == binding['name']:
+                        vdbtype = binding['vdbtype']
+                        if vdbtype == 'float':
+                            layertype = 'fvdb'
+                        elif vdbtype == 'vector':
+                            layertype = 'vvdb'
+                        elif vdbtype == 'int':
+                            layertype = 'ivdb'
+                        elif vdbtype == 'floatn':
+                            layertype = 'fnvdb'
+                        # Default is to stay 'geo' for an any binding.
                 else:
                     if not binding['readable'] and not binding['writeable']:
                         layertype = 'metadata'
@@ -1893,6 +1974,7 @@ def createSpareParmsFromOCLBindings(node, parmname):
             num = outputs.evalAsInt()
             found = False
             lookupname = binding['portname']
+            hasoutputlayer = hasoutputlayer or islayer
             if lookupname == '':
                 lookupname = binding['name']
             for i in range(1, num+1):
@@ -1904,12 +1986,32 @@ def createSpareParmsFromOCLBindings(node, parmname):
                 outputs.set(num+1)
                 i = num+1
                 node.parm('output' + str(i) + '_name').set(lookupname)
-                layertype = 'geo' if isgeo else binding['layertype']
-                if layertype == 'float?': layertype = 'floatn'
+                if isgeo:
+                    layertype = 'geo'
+                    # If the binding name matches port name, we assume
+                    # a pure VDB...  We need to know the type though.
+                    if isvdb and lookupname == binding['name']:
+                        vdbtype = binding['vdbtype']
+                        if vdbtype == 'float':
+                            layertype = 'fvdb'
+                        elif vdbtype == 'vector':
+                            layertype = 'vvdb'
+                        elif vdbtype == 'int':
+                            layertype = 'ivdb'
+                        elif vdbtype == 'floatn':
+                            layertype = 'fnvdb'
+                        # Default is to stay 'geo' for an any binding.
+                else:
+                    layertype = binding['layertype']
+                    if layertype == 'float?': layertype = 'floatn'
                 node.parm('output' + str(i) + '_type').set(layertype)
+                if isvdb and binding['readable']:
+                    # Take corresponding named input as our meta source
+                    node.parm('output' + str(i) + '_metadata').set('match')
 
-    # add an unbound input to provide output layer size
-    if inputs is not None and outputs is not None and not inputs.evalAsInt() and outputs.evalAsInt():
+    # Add an unbound input to provide output layer size
+    # This is only necessary if we have a layer output.
+    if inputs is not None and outputs is not None and not inputs.evalAsInt() and outputs.evalAsInt() and hasoutputlayer:
         inputs.set(1)
         node.parm('input1_name').set('')
         node.parm('input1_optional').set(True)
@@ -1932,8 +2034,25 @@ def createSpareParmsFromOCLBindings(node, parmname):
         lin = hou.rampBasis.Linear
         if parm: parm.set(hou.Ramp((lin, lin),(0,1),(0,1)))
         srcparm = node.parm(srcname) or node.parmTuple(srcname)
+
+        if srcparm:
+            # Destory all channels in the source parm as multiparm will
+            # clone them.
+            npt = srcparm.evalAsInt()
+            for i in range(npt):
+                node.parm(srcname + str(i+1) + 'pos').deleteAllKeyframes()
+                node.parm(srcname + str(i+1) + 'interp').deleteAllKeyframes()
+                x = node.parm(internalname + str(i+1) + 'value')
+                if x:
+                    node.parm(srcname + str(i+1) + 'value').deleteAllKeyframes()
+                else:
+                    node.parm(srcname + str(i+1) + 'cr').deleteAllKeyframes()
+                    node.parm(srcname + str(i+1) + 'cg').deleteAllKeyframes()
+                    node.parm(srcname + str(i+1) + 'cb').deleteAllKeyframes()
+
         # Link the point count
         if srcparm: srcparm.setExpression("ch('" + internalname + "')")
+
         # Setup opmultiparms
         cmd = 'opmultiparm ' + node.path() + ' "' + srcname + '#pos" "' + internalname + '#pos" "' + srcname + '#value" "' + internalname + '#value" "' + srcname + '#interp" "' + internalname + '#interp" "' + srcname + '#cr" "' + internalname + '#cr" "' + srcname + '#cg" "' + internalname + '#cg" "' + srcname + '#cb" "' + internalname + '#cb"'
         (res, err) = hou.hscript(cmd)
@@ -2131,6 +2250,3 @@ def createSpareParmsFromChCalls(node, parmname):
             # (This is really a workaround for a bug (#123616), since Houdini
             # should ideally know to update VEX snippets automatically).
             parm.set(original)
-
-
-
